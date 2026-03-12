@@ -1,0 +1,59 @@
+{
+  "name": "docmost-local-mcp",
+  "version": "0.1.0",
+  "main": "./dist/server.js",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json",
+    "build:helper": "cargo build --manifest-path native/auth-helper/Cargo.toml --release",
+    "generate:helper-packages": "node scripts/generate-helper-packages.mjs",
+    "sync:helper": "node scripts/sync-helper-binary.mjs",
+    "package:helper:local": "npm run build:helper && npm run sync:helper",
+    "prepare:publish": "npm run generate:helper-packages && node scripts/create-publish-dir.mjs",
+    "pack:publish": "npm run prepare:publish && npm pack ./.publish/main",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepublishOnly": "npm run build && npm run test"
+  },
+  "keywords": [
+    "mcp",
+    "docmost",
+    "typescript",
+    "cursor",
+    "claude",
+    "stdio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "Docmost MCP server for local IDE integrations",
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "open": "^11.0.0",
+    "zod": "^4.3.6"
+  },
+  "type": "module",
+  "types": "./dist/server.d.ts",
+  "bin": {
+    "docmost-local-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  }
+}

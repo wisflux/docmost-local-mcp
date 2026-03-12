@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+coverage
+*.log
+native/auth-helper/target
+packages/*/bin/*
+.publish
+*.tgz
