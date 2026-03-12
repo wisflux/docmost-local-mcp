@@ -79,7 +79,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v3
         with:
           workspaces: native/auth-helper
 
@@ -101,7 +101,7 @@ jobs:
         run: node scripts/sync-helper-binary.mjs ${{ matrix.target.platform }} ${{ matrix.target.arch }}
 
       - name: Upload helper artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: helper-${{ matrix.target.id }}
           path: helpers/

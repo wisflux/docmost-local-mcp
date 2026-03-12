@@ -59,7 +59,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v3
         with:
           workspaces: native/auth-helper
 
@@ -81,7 +81,7 @@ jobs:
         run: node scripts/sync-helper-binary.mjs ${{ matrix.target.platform }} ${{ matrix.target.arch }}
 
       - name: Upload helper artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: helper-${{ matrix.target.id }}
           path: helpers/
@@ -105,7 +105,7 @@ jobs:
         run: npm ci
 
       - name: Download bundled helper artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: helper-*
           path: .
@@ -130,7 +130,7 @@ jobs:
         run: npm pack
 
       - name: Upload npm package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: npm-package
           path: docmost-local-mcp-*.tgz
@@ -159,7 +159,7 @@ jobs:
         run: npm ci
 
       - name: Download bundled helper artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: helper-*
           path: .
