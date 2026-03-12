@@ -133,7 +133,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: npm-package
-          path: docmost-local-mcp-*.tgz
+          path: "*.tgz"
           if-no-files-found: error
 
   publish:
