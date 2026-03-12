@@ -42,6 +42,10 @@ function convertNodes(nodes: ProseMirrorNode[], indent = 0): string {
         output.push(convertList(node.content ?? [], false, indent), "");
         break;
       }
+      case "taskList": {
+        output.push(convertTaskList(node.content ?? [], indent), "");
+        break;
+      }
       case "orderedList": {
         output.push(convertList(node.content ?? [], true, indent), "");
         break;
@@ -173,6 +177,42 @@ function convertList(items: ProseMirrorNode[], ordered: boolean, indent: number)
       output.push(convertNodes([nestedList], indent + 2));
     }
   });
+
+  return output.join("\n");
+}
+
+function convertTaskList(items: ProseMirrorNode[], indent: number): string {
+  const output: string[] = [];
+  const prefix = " ".repeat(indent);
+
+  for (const item of items) {
+    if (item.type !== "taskItem") {
+      continue;
+    }
+
+    const itemContent = item.content ?? [];
+    let firstParagraph = "";
+    const nestedLists: ProseMirrorNode[] = [];
+
+    for (const child of itemContent) {
+      if (child.type === "paragraph" && !firstParagraph) {
+        firstParagraph = extractText(child.content ?? []);
+        continue;
+      }
+
+      if (child.type === "bulletList" || child.type === "orderedList" || child.type === "taskList") {
+        nestedLists.push(child);
+      }
+    }
+
+    const isChecked = Boolean(item.attrs?.checked);
+    const marker = isChecked ? "- [x] " : "- [ ] ";
+    output.push(`${prefix}${marker}${firstParagraph}`);
+
+    for (const nestedList of nestedLists) {
+      output.push(convertNodes([nestedList], indent + 2));
+    }
+  }
 
   return output.join("\n");
 }

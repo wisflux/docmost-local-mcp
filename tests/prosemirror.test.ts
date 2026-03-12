@@ -108,4 +108,72 @@ describe("prosemirrorToMarkdown", () => {
     expect(markdown).toContain("| A | B |");
     expect(markdown).toContain("| 1 | 2 |");
   });
+
+  it("renders task lists with checked states", () => {
+    const markdown = prosemirrorToMarkdown({
+      type: "doc",
+      content: [
+        {
+          type: "taskList",
+          content: [
+            {
+              type: "taskItem",
+              attrs: { checked: false },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "bwjgrvbdamfz" },
+                  content: [{ type: "text", text: "Monitoring " }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "taskList",
+          content: [
+            {
+              type: "taskItem",
+              attrs: { checked: false },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "kmuomrhntdgh" },
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        "Performance Logging should be more to test multiple theories , not just raw logging and then making theories from them",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "taskItem",
+              attrs: { checked: false },
+              content: [
+                {
+                  type: "paragraph",
+                  attrs: { id: "kbtervxilajg" },
+                  content: [
+                    {
+                      type: "text",
+                      text: "Whims drive tasks completion rather than pre-planned flow",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(markdown).toContain("- [ ] Monitoring");
+    expect(markdown).toContain(
+      "- [ ] Performance Logging should be more to test multiple theories , not just raw logging and then making theories from them",
+    );
+    expect(markdown).toContain("- [ ] Whims drive tasks completion rather than pre-planned flow");
+  });
 });
