@@ -143,7 +143,7 @@ jobs:
     if: github.event_name == 'push' || inputs.publish
     permissions:
       contents: read
-      id-token: write
+      id-token: write   # Required for npm Trusted Publishing (OIDC)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -154,6 +154,9 @@ jobs:
           node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -173,5 +176,4 @@ jobs:
 
       - name: Publish package
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Uses Trusted Publishing (OIDC). Configure at npm package Settings → Trusted publishing

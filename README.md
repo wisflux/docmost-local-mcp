@@ -173,6 +173,16 @@ The repository includes GitHub Actions workflows that:
 
 Before enabling automated publishing, configure npm trusted publishing for this package and make sure the `repository` field in `package.json` points at the real GitHub repository.
 
+### Configuring npm Trusted Publishing
+
+1. Open the package on npm: [@wisflux/docmost-local-mcp](https://www.npmjs.com/package/@wisflux/docmost-local-mcp) (or create the package first with a one-time token publish if it does not exist yet).
+2. Go to **Package settings** → **Trusted publishing**.
+3. Under "Select your publisher", choose **GitHub Actions**.
+4. Set **Workflow filename** to `release.yml` (must match exactly, including the `.yml` extension).
+5. Save. No `NPM_TOKEN` secret is needed; the release workflow uses OIDC.
+
+After that, pushing a tag like `v0.1.0` will trigger the Release workflow and publish using short-lived OIDC credentials.
+
 ## License
 
 MIT
