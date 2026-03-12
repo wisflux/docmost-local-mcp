@@ -1,12 +1,13 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { getHelperTarget, helperDir } from "./helper-targets.mjs";
 
 const platform = process.argv[2] ?? process.platform;
 const arch = process.argv[3] ?? process.arch;
-const rootDir = new URL("../", import.meta.url).pathname;
+const rootDir = fileURLToPath(new URL("../", import.meta.url));
 
 const target = getHelperTarget(platform, arch);
 if (!target) {

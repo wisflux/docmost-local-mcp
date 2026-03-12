@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import open from "open";
 
@@ -52,7 +53,7 @@ export function getBundledHelperPath(
   }
 
   const binaryName = platform === "win32" ? WINDOWS_BINARY_NAME : UNIX_BINARY_NAME;
-  return new URL(`../../helpers/${key}/${binaryName}`, import.meta.url).pathname;
+  return fileURLToPath(new URL(`../../helpers/${key}/${binaryName}`, import.meta.url));
 }
 
 async function resolveAuthHelperBinary(): Promise<string> {
