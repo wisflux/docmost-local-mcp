@@ -1,4 +1,4 @@
-# docmost-local-mcp
+# @wisflux/docmost-local-mcp
 
 A local MCP server for [Docmost](https://docmost.com/) written in TypeScript for IDE integrations that launch via `npx`.
 
@@ -20,17 +20,10 @@ It starts as a stdio MCP server, launches a small native auth window when authen
 
 ## Installation
 
-For local development in this repository:
+Install or run through `npx`:
 
 ```bash
-npm install
-npm run build
-```
-
-For direct usage from an IDE after publishing:
-
-```bash
-npx docmost-local-mcp --base-url=https://docs.example.com
+npx @wisflux/docmost-local-mcp --base-url=https://docs.example.com
 ```
 
 ## IDE Configuration
@@ -44,23 +37,7 @@ Example config shape:
   "mcpServers": {
     "docmost": {
       "command": "npx",
-      "args": ["-y", "docmost-local-mcp", "--base-url=https://docs.example.com"]
-    }
-  }
-}
-```
-
-If you are working from a local checkout instead of a published package:
-
-```json
-{
-  "mcpServers": {
-    "docmost": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/docmost-local-mcp/dist/cli.js",
-        "--base-url=https://docs.example.com"
-      ]
+      "args": ["-y", "@wisflux/docmost-local-mcp", "--base-url=https://docs.example.com"]
     }
   }
 }
@@ -69,7 +46,7 @@ If you are working from a local checkout instead of a published package:
 You can also provide the instance URL through an environment variable:
 
 ```bash
-DOCMOST_BASE_URL=https://docs.example.com npx docmost-local-mcp
+DOCMOST_BASE_URL=https://docs.example.com npx @wisflux/docmost-local-mcp
 ```
 
 ## Authentication Flow
@@ -116,21 +93,6 @@ Files used there:
 
 The encrypted credentials file is meant to avoid storing raw passwords in plain text, but it is not equivalent to using an OS keychain or a hardware-backed secret store.
 
-## Development
-
-```bash
-npm run dev
-npm run typecheck
-npm run test
-npm run build
-npm run build:helper
-npm run package:helper:local
-```
-
-`npm run package:helper:local` builds the current platform's native helper in release mode and copies it into `helpers/<platform>-<arch>/`.
-
-The Rust helper source lives in `native/auth-helper/`.
-
 ## Tool Reference
 
 ### `list_spaces`
@@ -150,38 +112,9 @@ Inputs:
 
 - `slug_id`: the page slug ID returned by `search_docs`
 
-## Publishing
+## Contributing
 
-This package is set up as an npm CLI package with:
-
-- `bin` entry for `docmost-local-mcp`
-- compiled output in `dist/`
-- native helper binaries in `helpers/`
-- declaration files from `tsc`
-- `prepublishOnly` build and test checks
-
-Before publishing, build helper binaries for all target platforms (via CI) and place them in `helpers/`. Then run `npm publish`.
-
-Before publishing, update package metadata such as `author`, `repository`, and homepage fields as needed.
-
-The repository includes GitHub Actions workflows that:
-
-- run normal CI on pushes and pull requests
-- build the native helper on all supported target runners
-- assemble a single npm package containing every bundled helper binary
-- publish with npm trusted publishing on version tags such as `v0.1.0`
-
-Before enabling automated publishing, configure npm trusted publishing for this package and make sure the `repository` field in `package.json` points at the real GitHub repository.
-
-### Configuring npm Trusted Publishing
-
-1. Open the package on npm: [@wisflux/docmost-local-mcp](https://www.npmjs.com/package/@wisflux/docmost-local-mcp) (or create the package first with a one-time token publish if it does not exist yet).
-2. Go to **Package settings** → **Trusted publishing**.
-3. Under "Select your publisher", choose **GitHub Actions**.
-4. Set **Workflow filename** to `release.yml` (must match exactly, including the `.yml` extension).
-5. Save. No `NPM_TOKEN` secret is needed; the release workflow uses OIDC.
-
-After that, pushing a tag like `v0.1.0` will trigger the Release workflow and publish using short-lived OIDC credentials.
+See `CONTRIBUTING.md`.
 
 ## License
 
