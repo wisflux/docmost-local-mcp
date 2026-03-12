@@ -108,7 +108,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: helper-*
-          path: .
+          path: helpers
           merge-multiple: true
 
       - name: Verify bundled helper set
@@ -162,7 +162,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: helper-*
-          path: .
+          path: helpers
           merge-multiple: true
 
       - name: Build package
