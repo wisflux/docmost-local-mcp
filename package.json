@@ -1,6 +1,6 @@
 {
   "name": "@wisflux/docmost-local-mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "main": "./dist/server.js",
   "scripts": {
     "test": "vitest run",
