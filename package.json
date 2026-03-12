@@ -25,7 +25,7 @@
   "description": "Docmost MCP server for local IDE integrations",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wisflux/docmost-local-mcp.git"
+    "url": "git+https://github.com/wisflux/docmost-local-mcp.git"
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
