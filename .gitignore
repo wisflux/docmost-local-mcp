@@ -4,6 +4,5 @@ dist
 coverage
 *.log
 native/auth-helper/target
-packages/*/bin/*
-.publish
+helpers
 *.tgz

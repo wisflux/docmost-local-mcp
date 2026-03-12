@@ -1,8 +1,5 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 import open from "open";
@@ -10,10 +7,17 @@ import open from "open";
 import type { AuthWindowSession } from "../types.js";
 import { debugLog } from "../utils/debug.js";
 
-const require = createRequire(import.meta.url);
-
 const WINDOWS_BINARY_NAME = "docmost-auth-helper.exe";
 const UNIX_BINARY_NAME = "docmost-auth-helper";
+
+const SUPPORTED_TARGETS = [
+  "darwin-arm64",
+  "darwin-x64",
+  "linux-arm64",
+  "linux-x64",
+  "win32-arm64",
+  "win32-x64",
+] as const;
 
 interface AuthWindowHandle {
   mode: "native" | "browser";
@@ -38,33 +42,23 @@ export async function launchAuthWindow(session: AuthWindowSession): Promise<Auth
   }
 }
 
-export function getHelperPackageName(
-  platform: NodeJS.Platform = process.platform,
-  arch = process.arch,
+export function getBundledHelperPath(
+  platform: string = process.platform,
+  arch: string = process.arch,
 ): string | null {
   const key = `${platform}-${arch}`;
-  switch (key) {
-    case "darwin-arm64":
-      return "@docmost-local-mcp/auth-helper-darwin-arm64";
-    case "darwin-x64":
-      return "@docmost-local-mcp/auth-helper-darwin-x64";
-    case "linux-arm64":
-      return "@docmost-local-mcp/auth-helper-linux-arm64";
-    case "linux-x64":
-      return "@docmost-local-mcp/auth-helper-linux-x64";
-    case "win32-arm64":
-      return "@docmost-local-mcp/auth-helper-win32-arm64";
-    case "win32-x64":
-      return "@docmost-local-mcp/auth-helper-win32-x64";
-    default:
-      return null;
+  if (!SUPPORTED_TARGETS.includes(key as (typeof SUPPORTED_TARGETS)[number])) {
+    return null;
   }
+
+  const binaryName = platform === "win32" ? WINDOWS_BINARY_NAME : UNIX_BINARY_NAME;
+  return new URL(`../../helpers/${key}/${binaryName}`, import.meta.url).pathname;
 }
 
 async function resolveAuthHelperBinary(): Promise<string> {
   const candidates = [
     process.env.DOCMOST_AUTH_HELPER_PATH,
-    getPackagedHelperCandidate(),
+    getBundledHelperPath(),
     getLocalBuildCandidate("release"),
     getLocalBuildCandidate("debug"),
   ].filter((value): value is string => Boolean(value));
@@ -127,24 +121,12 @@ function launchNativeHelper(binaryPath: string, session: AuthWindowSession): Aut
   };
 }
 
-function getPackagedHelperCandidate(): string | null {
-  const packageName = getHelperPackageName();
-  if (!packageName) {
-    return null;
-  }
-
-  try {
-    const packageJsonPath = require.resolve(`${packageName}/package.json`);
-    return join(dirname(packageJsonPath), "bin", getBinaryName());
-  } catch {
-    return null;
-  }
-}
-
 function getLocalBuildCandidate(profile: "debug" | "release"): string {
-  return fileURLToPath(
-    new URL(`../../native/auth-helper/target/${profile}/${getBinaryName()}`, import.meta.url),
-  );
+  const binaryName = process.platform === "win32" ? WINDOWS_BINARY_NAME : UNIX_BINARY_NAME;
+  return new URL(
+    `../../native/auth-helper/target/${profile}/${binaryName}`,
+    import.meta.url,
+  ).pathname;
 }
 
 async function isRunnableFile(path: string): Promise<boolean> {
@@ -154,10 +136,6 @@ async function isRunnableFile(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function getBinaryName(): string {
-  return process.platform === "win32" ? WINDOWS_BINARY_NAME : UNIX_BINARY_NAME;
 }
 
 function toErrorMessage(error: unknown): string {

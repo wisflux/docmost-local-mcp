@@ -1,8 +1,8 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import process from "node:process";
 
-import { getHelperTarget } from "./helper-targets.mjs";
+import { getHelperTarget, helperDir } from "./helper-targets.mjs";
 
 const platform = process.argv[2] ?? process.platform;
 const arch = process.argv[3] ?? process.arch;
@@ -18,8 +18,10 @@ if (!existsSync(sourcePath)) {
   throw new Error(`Built helper binary not found at ${sourcePath}`);
 }
 
-const destinationPath = join(rootDir, "packages", target.packageDir, "bin", target.binaryName);
-mkdirSync(dirname(destinationPath), { recursive: true });
+const destinationDir = join(rootDir, "helpers", helperDir(target));
+mkdirSync(destinationDir, { recursive: true });
+
+const destinationPath = join(destinationDir, target.binaryName);
 copyFileSync(sourcePath, destinationPath);
 
 if (platform !== "win32") {

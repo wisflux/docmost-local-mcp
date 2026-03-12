@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { getHelperPackageName } from "../src/auth/native-helper-launcher.js";
+import { getBundledHelperPath } from "../src/auth/native-helper-launcher.js";
 
-describe("getHelperPackageName", () => {
-  it("maps supported platforms to package names", () => {
-    expect(getHelperPackageName("darwin", "arm64")).toBe(
-      "@docmost-local-mcp/auth-helper-darwin-arm64",
-    );
-    expect(getHelperPackageName("win32", "x64")).toBe("@docmost-local-mcp/auth-helper-win32-x64");
-    expect(getHelperPackageName("linux", "x64")).toBe("@docmost-local-mcp/auth-helper-linux-x64");
+describe("getBundledHelperPath", () => {
+  it("returns a path for supported platforms", () => {
+    const path = getBundledHelperPath("darwin", "arm64");
+    expect(path).toContain("helpers/darwin-arm64/docmost-auth-helper");
+  });
+
+  it("returns a path with .exe for Windows", () => {
+    const path = getBundledHelperPath("win32", "x64");
+    expect(path).toContain("helpers/win32-x64/docmost-auth-helper.exe");
   });
 
   it("returns null for unsupported platforms", () => {
-    expect(getHelperPackageName("freebsd", "x64")).toBeNull();
+    expect(getBundledHelperPath("freebsd", "x64")).toBeNull();
   });
 });

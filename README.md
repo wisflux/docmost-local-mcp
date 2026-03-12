@@ -81,13 +81,15 @@ DOCMOST_BASE_URL=https://docs.example.com npx docmost-local-mcp
 5. The helper window closes itself after successful login.
 6. Future calls reuse the stored token until it is close to expiry or rejected by Docmost.
 
-If the native helper is unavailable, the server falls back to opening the local login page in your browser.
+If the native helper is unavailable for the current platform, the server falls back to opening the local login page in your browser.
 
 ## Platform Notes
 
-- macOS uses the system `WKWebView`
-- Windows uses `WebView2`
-- Linux uses `WebKitGTK`
+The native auth helper uses the system webview on each platform:
+
+- macOS: `WKWebView`
+- Windows: `WebView2`
+- Linux: `WebKitGTK`
 
 Important caveats:
 
@@ -95,9 +97,7 @@ Important caveats:
 - Linux desktop environments need the relevant WebKitGTK packages installed
 - Unsigned macOS binaries may show stricter launch prompts until the helper binaries are signed and notarized
 
-The repository includes the Rust helper source in `native/auth-helper/` and platform package scaffolding in `packages/` for publishing prebuilt helper binaries.
-
-Local development keeps helper publishing metadata out of the root package manifest so `npm install` stays simple. The publish-ready main package manifest is generated on demand and adds the platform helper packages as optional dependencies.
+All platform helper binaries are bundled inside the published npm package under `helpers/`. CI builds each binary and places it before publishing.
 
 ## Local State
 
@@ -123,18 +123,13 @@ npm run dev
 npm run typecheck
 npm run test
 npm run build
-npm run generate:helper-packages
 npm run build:helper
 npm run package:helper:local
-npm run prepare:publish
-npm run pack:publish
 ```
 
-`npm run package:helper:local` builds the current platform's native helper and copies it into the matching helper package directory under `packages/`.
+`npm run package:helper:local` builds the current platform's native helper in release mode and copies it into `helpers/<platform>-<arch>/`.
 
-`npm run prepare:publish` creates a publish-ready package directory in `.publish/main/` with helper `optionalDependencies` added.
-
-`npm run pack:publish` packs that generated publish directory instead of the local development manifest.
+The Rust helper source lives in `native/auth-helper/`.
 
 ## Tool Reference
 
@@ -161,8 +156,11 @@ This package is set up as an npm CLI package with:
 
 - `bin` entry for `docmost-local-mcp`
 - compiled output in `dist/`
+- native helper binaries in `helpers/`
 - declaration files from `tsc`
 - `prepublishOnly` build and test checks
+
+Before publishing, build helper binaries for all target platforms (via CI) and place them in `helpers/`. Then run `npm publish`.
 
 Before publishing, update package metadata such as `author`, `repository`, and homepage fields as needed.
 
