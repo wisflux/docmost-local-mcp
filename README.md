@@ -164,6 +164,15 @@ Before publishing, build helper binaries for all target platforms (via CI) and p
 
 Before publishing, update package metadata such as `author`, `repository`, and homepage fields as needed.
 
+The repository includes GitHub Actions workflows that:
+
+- run normal CI on pushes and pull requests
+- build the native helper on all supported target runners
+- assemble a single npm package containing every bundled helper binary
+- publish with npm trusted publishing on version tags such as `v0.1.0`
+
+Before enabling automated publishing, configure npm trusted publishing for this package and make sure the `repository` field in `package.json` points at the real GitHub repository.
+
 ## License
 
 MIT
