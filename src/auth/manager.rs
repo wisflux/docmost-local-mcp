@@ -57,9 +57,9 @@ impl AuthManager {
         let has_session = session.is_some();
 
         if let (Some(config), Some(session)) = (config.as_ref(), session.as_ref()) {
-            if preferred_base_url.as_deref() == Some(config.base_url.as_str())
-                && !is_session_expiring(session)
-            {
+            let url_matches =
+                preferred_base_url.as_deref() == Some(config.base_url.as_str());
+            if url_matches && !is_session_expiring(session) {
                 debug_log(
                     "auth",
                     "Using saved session",
@@ -294,11 +294,12 @@ pub fn read_auth_token_from_headers(headers: &reqwest::header::HeaderMap) -> Opt
             continue;
         };
 
-        if let Some(captures) = AUTH_TOKEN_RE.captures(cookie) {
-            if let Some(token) = captures.get(1) {
-                let decoded = urlencoding::decode(token.as_str()).ok()?;
-                return Some(decoded.into_owned());
-            }
+        let token = AUTH_TOKEN_RE
+            .captures(cookie)
+            .and_then(|c| c.get(1));
+        if let Some(token) = token {
+            let decoded = urlencoding::decode(token.as_str()).ok()?;
+            return Some(decoded.into_owned());
         }
     }
 
