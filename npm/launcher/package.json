@@ -7,15 +7,11 @@
   "bin": {
     "docmost-local-mcp": "./cli.js"
   },
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
   "files": [
-    "cli.js"
-  ],
-  "optionalDependencies": {
-    "@wisflux/docmost-local-mcp-darwin-arm64": "0.2.0",
-    "@wisflux/docmost-local-mcp-darwin-x64": "0.2.0",
-    "@wisflux/docmost-local-mcp-linux-arm64": "0.2.0",
-    "@wisflux/docmost-local-mcp-linux-x64": "0.2.0",
-    "@wisflux/docmost-local-mcp-win32-arm64": "0.2.0",
-    "@wisflux/docmost-local-mcp-win32-x64": "0.2.0"
-  }
+    "cli.js",
+    "postinstall.js"
+  ]
 }

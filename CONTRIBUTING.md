@@ -40,34 +40,29 @@ cargo build --release --no-default-features
 ## Repository Layout
 
 - `src/`: Rust MCP server, auth flow, Docmost client, storage, and ProseMirror conversion
-- `npm/launcher/`: thin Node launcher package used by `npx`
-- `npm/platform-template/`: template used to build platform-specific npm binary packages
+- `npm/launcher/`: Node launcher package used by `npx`, plus postinstall binary downloader
 - `.github/workflows/`: CI and release workflows
 
 ## Local npx-style test (launcher + binary)
 
-To verify the full path (Node launcher → platform binary → MCP server) without publishing:
+To verify the full path (Node launcher → binary → MCP server) without publishing:
 
 1. Build the release binary: `cargo build --release`
-2. Create a local platform package for your OS/arch (example for darwin-arm64):
+2. Place it where the launcher expects:
 
    ```bash
-   mkdir -p npm/platform-test-darwin-arm64/bin
-   cp target/release/docmost-local-mcp npm/platform-test-darwin-arm64/bin/
-   # package.json: name "@wisflux/docmost-local-mcp-darwin-arm64", "bin": { "docmost-local-mcp": "./bin/docmost-local-mcp" }
+   mkdir -p npm/launcher/bin
+   cp target/release/docmost-local-mcp npm/launcher/bin/
    ```
 
-   Use the appropriate folder name for your platform (e.g. `linux-x64`, `win32-x64`). You can copy `npm/platform-template/package.json.tmpl` and substitute `__PACKAGE_NAME__`, `__OS__`, `__CPU__`, `__BINARY_NAME__` (e.g. `docmost-local-mcp.exe` on Windows).
+   On Windows, copy `docmost-local-mcp.exe` instead.
 
-3. Install the launcher with the local platform package and run:
+3. Run the launcher:
 
    ```bash
-   cd npm/launcher && npm install ../platform-test-darwin-arm64 --no-save
-   node cli.js --help
-   echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' | node cli.js --base-url=https://example.com
+   node npm/launcher/cli.js --help
+   echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' | node npm/launcher/cli.js --base-url=https://example.com
    ```
-
-   You should see the launcher’s help and then a JSON-RPC `initialize` result. The `platform-test-*` directory is for local use only (e.g. add to `.gitignore` if you create one).
 
 ## Local MCP Testing
 
@@ -123,7 +118,7 @@ If Linux native-webview builds fail locally or in CI, check these first.
 - `cargo fmt --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
-- a launcher smoke test against a mocked platform package
+- a launcher smoke test with a mock binary in `bin/`
 - release binary builds on:
   - `macos-15`
   - `macos-15-intel`
@@ -134,7 +129,7 @@ If Linux native-webview builds fail locally or in CI, check these first.
 
 ## Making `npx @wisflux/docmost-local-mcp` work
 
-The command works once the meta package and platform packages are published to npm. To publish a release:
+The command works once the npm package is published and a matching GitHub Release exists with platform binaries. To publish a release:
 
 1. Commit any changes and ensure CI passes on `main`.
 2. Create and push a version tag (version is taken from the tag; e.g. `v0.2.0` → published as `0.2.0`):
@@ -144,28 +139,12 @@ The command works once the meta package and platform packages are published to n
    git push origin v0.2.0
    ```
 
-3. The **Release** workflow will build binaries for all platforms, package them, then publish the six platform packages and finally the meta package to npm. After it completes, anyone can run:
+3. The **Release** workflow will:
+   - Build binaries for all 6 platforms
+   - Create a GitHub Release with each binary as a downloadable asset
+   - Publish the single `@wisflux/docmost-local-mcp` package to npm
 
-   ```bash
-   npx -y @wisflux/docmost-local-mcp --base-url=https://docs.example.com
-   ```
-
-## Release Flow
-
-`release.yml`:
-
-1. builds the Rust binary on all supported runner targets
-2. downloads the per-platform binary artifacts
-3. creates six platform npm packages plus the meta launcher package
-4. validates all package directories with `npm pack`
-5. publishes platform packages first, then the meta package
-
-Release publishing is triggered by tags like:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
+4. When a user runs `npx -y @wisflux/docmost-local-mcp`, the `postinstall` script downloads the correct platform binary from the GitHub Release.
 
 ## Trusted Publishing
 
@@ -182,15 +161,9 @@ No long-lived `NPM_TOKEN` secret is needed when this is configured.
 
 ## Packaging Model
 
-This project publishes:
+This project publishes a single npm package (`@wisflux/docmost-local-mcp`) containing:
 
-- one meta npm package: `@wisflux/docmost-local-mcp`
-- six platform binary packages:
-  - `@wisflux/docmost-local-mcp-darwin-arm64`
-  - `@wisflux/docmost-local-mcp-darwin-x64`
-  - `@wisflux/docmost-local-mcp-linux-arm64`
-  - `@wisflux/docmost-local-mcp-linux-x64`
-  - `@wisflux/docmost-local-mcp-win32-arm64`
-  - `@wisflux/docmost-local-mcp-win32-x64`
+- `cli.js`: thin Node launcher that executes the platform binary
+- `postinstall.js`: downloads the correct platform binary from GitHub Releases on install
 
-The meta package is only the Node launcher. The real runtime lives in the platform package binary that npm installs as an optional dependency for the current machine.
+Platform binaries are hosted as GitHub Release assets named `docmost-local-mcp-{platform}-{arch}` (e.g. `docmost-local-mcp-darwin-arm64`, `docmost-local-mcp-win32-x64.exe`).

@@ -10,4 +10,4 @@ target
 release-artifacts
 release-packages
 npm/launcher/node_modules
-npm/platform-test-*
+npm/launcher/bin

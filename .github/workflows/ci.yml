@@ -56,25 +56,22 @@ jobs:
         with:
           node-version: 20
 
-      - name: Create mock platform package
+      - name: Create mock binary
         run: |
-          mkdir -p npm/launcher/node_modules/@wisflux/docmost-local-mcp-linux-x64/bin
-          cat <<'EOF' > npm/launcher/node_modules/@wisflux/docmost-local-mcp-linux-x64/package.json
-          {
-            "name": "@wisflux/docmost-local-mcp-linux-x64",
-            "version": "0.2.0"
-          }
-          EOF
-          cat <<'EOF' > npm/launcher/node_modules/@wisflux/docmost-local-mcp-linux-x64/bin/docmost-local-mcp
+          mkdir -p npm/launcher/bin
+          cat <<'EOF' > npm/launcher/bin/docmost-local-mcp
           #!/usr/bin/env sh
           echo "launcher-smoke:$*"
           EOF
-          chmod +x npm/launcher/node_modules/@wisflux/docmost-local-mcp-linux-x64/bin/docmost-local-mcp
+          chmod +x npm/launcher/bin/docmost-local-mcp
 
       - name: Run launcher smoke test
         run: |
           output=$(node npm/launcher/cli.js --ping)
           test "$output" = "launcher-smoke:--ping"
+
+      - name: Verify postinstall syntax
+        run: node --check npm/launcher/postinstall.js
 
   platform-builds:
     name: Platform Build (${{ matrix.target.id }})

@@ -2,7 +2,7 @@
 
 A local MCP server for [Docmost](https://docmost.com/) implemented in Rust and launched through `npx`.
 
-The published npm package is a small Node launcher plus a platform-specific Rust binary. At runtime the binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
+The published npm package is a small Node launcher that downloads the platform-specific Rust binary from GitHub Releases on install. At runtime the binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
 
 ## Features
 

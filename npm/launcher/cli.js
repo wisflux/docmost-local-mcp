@@ -1,59 +1,24 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
-import path from "node:path";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PLATFORM_PACKAGES = {
-  "darwin-arm64": {
-    packageName: "@wisflux/docmost-local-mcp-darwin-arm64",
-    binaryName: "docmost-local-mcp",
-  },
-  "darwin-x64": {
-    packageName: "@wisflux/docmost-local-mcp-darwin-x64",
-    binaryName: "docmost-local-mcp",
-  },
-  "linux-arm64": {
-    packageName: "@wisflux/docmost-local-mcp-linux-arm64",
-    binaryName: "docmost-local-mcp",
-  },
-  "linux-x64": {
-    packageName: "@wisflux/docmost-local-mcp-linux-x64",
-    binaryName: "docmost-local-mcp",
-  },
-  "win32-arm64": {
-    packageName: "@wisflux/docmost-local-mcp-win32-arm64",
-    binaryName: "docmost-local-mcp.exe",
-  },
-  "win32-x64": {
-    packageName: "@wisflux/docmost-local-mcp-win32-x64",
-    binaryName: "docmost-local-mcp.exe",
-  },
-};
+const ext = process.platform === "win32" ? ".exe" : "";
+const binaryPath = join(__dirname, "bin", `docmost-local-mcp${ext}`);
 
-const targetKey = `${process.platform}-${process.arch}`;
-const target = PLATFORM_PACKAGES[targetKey];
-
-if (!target) {
+if (!existsSync(binaryPath)) {
   console.error(
-    `Unsupported platform for @wisflux/docmost-local-mcp: ${process.platform}/${process.arch}`,
+    "@wisflux/docmost-local-mcp: binary not found. Try reinstalling the package:\n" +
+    "  npm install @wisflux/docmost-local-mcp\n" +
+    "or run directly with npx:\n" +
+    "  npx -y @wisflux/docmost-local-mcp",
   );
   process.exit(1);
 }
-
-let packageJsonPath;
-try {
-  packageJsonPath = require.resolve(`${target.packageName}/package.json`);
-} catch (error) {
-  console.error(
-    `The platform package ${target.packageName} is not installed. Reinstall the package or rerun npx.`,
-  );
-  process.exit(1);
-}
-
-const binaryPath = path.join(path.dirname(packageJsonPath), "bin", target.binaryName);
 
 try {
   execFileSync(binaryPath, process.argv.slice(2), {
@@ -64,7 +29,6 @@ try {
   if (typeof error.status === "number") {
     process.exit(error.status);
   }
-
   console.error(`Failed to launch ${binaryPath}: ${error.message}`);
   process.exit(1);
 }

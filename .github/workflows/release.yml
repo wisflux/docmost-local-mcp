@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the packages to npm"
+        description: "Publish the package to npm"
         type: boolean
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-binaries:
@@ -24,33 +24,21 @@ jobs:
         target:
           - id: darwin-arm64
             runner: macos-15
-            os: darwin
-            cpu: arm64
             binary_name: docmost-local-mcp
           - id: darwin-x64
             runner: macos-15-intel
-            os: darwin
-            cpu: x64
             binary_name: docmost-local-mcp
           - id: linux-arm64
             runner: ubuntu-24.04-arm
-            os: linux
-            cpu: arm64
             binary_name: docmost-local-mcp
           - id: linux-x64
             runner: ubuntu-24.04
-            os: linux
-            cpu: x64
             binary_name: docmost-local-mcp
           - id: win32-arm64
             runner: windows-11-arm
-            os: win32
-            cpu: arm64
             binary_name: docmost-local-mcp.exe
           - id: win32-x64
             runner: windows-2025
-            os: win32
-            cpu: x64
             binary_name: docmost-local-mcp.exe
     steps:
       - name: Checkout repository
@@ -76,21 +64,22 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Stage binary artifact
+      - name: Rename binary for upload
         shell: bash
         run: |
-          mkdir -p "release-binary/${{ matrix.target.id }}/bin"
-          cp "target/release/${{ matrix.target.binary_name }}" "release-binary/${{ matrix.target.id }}/bin/${{ matrix.target.binary_name }}"
+          ext=""
+          if [[ "${{ matrix.target.binary_name }}" == *.exe ]]; then ext=".exe"; fi
+          cp "target/release/${{ matrix.target.binary_name }}" "docmost-local-mcp-${{ matrix.target.id }}${ext}"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
           name: binary-${{ matrix.target.id }}
-          path: release-binary/${{ matrix.target.id }}
+          path: docmost-local-mcp-${{ matrix.target.id }}*
           if-no-files-found: error
 
-  package:
-    name: Package npm Artifacts
+  release:
+    name: Create GitHub Release
     runs-on: ubuntu-24.04
     needs: build-binaries
     steps:
@@ -99,12 +88,6 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
 
       - name: Install Linux system dependencies
         run: |
@@ -119,14 +102,41 @@ jobs:
       - name: Run Rust tests
         run: cargo test
 
-      - name: Download binary artifacts
+      - name: Download all binary artifacts
         uses: actions/download-artifact@v5
         with:
           pattern: binary-*
-          path: release-artifacts
-          merge-multiple: false
+          path: release-binaries
+          merge-multiple: true
 
-      - name: Build npm package directories
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            release-binaries/*
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-24.04
+    needs: release
+    if: github.event_name == 'push' || inputs.publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Prepare npm package
         shell: bash
         run: |
           set -euo pipefail
@@ -134,95 +144,23 @@ jobs:
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
             VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
           fi
-          export VERSION
-          mkdir -p release-packages/meta
-          cp npm/launcher/cli.js release-packages/meta/
-          cp npm/launcher/package.json release-packages/meta/
-          cp README.md LICENSE release-packages/meta/
+
+          mkdir -p release-package
+          cp npm/launcher/cli.js release-package/
+          cp npm/launcher/postinstall.js release-package/
+          cp npm/launcher/package.json release-package/
+          cp README.md LICENSE release-package/
 
           node -e "
             const fs = require('fs');
-            const pkgPath = 'release-packages/meta/package.json';
+            const pkgPath = 'release-package/package.json';
             const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
             pkg.version = process.env.VERSION;
-            Object.keys(pkg.optionalDependencies).forEach((name) => { pkg.optionalDependencies[name] = process.env.VERSION; });
-            pkg.files = ['cli.js', 'README.md', 'LICENSE'];
+            pkg.files = ['cli.js', 'postinstall.js', 'README.md', 'LICENSE'];
             fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
           "
+        env:
+          VERSION: ${{ github.ref_name }}
 
-          targets=(
-            "darwin-arm64 darwin arm64 docmost-local-mcp"
-            "darwin-x64 darwin x64 docmost-local-mcp"
-            "linux-arm64 linux arm64 docmost-local-mcp"
-            "linux-x64 linux x64 docmost-local-mcp"
-            "win32-arm64 win32 arm64 docmost-local-mcp.exe"
-            "win32-x64 win32 x64 docmost-local-mcp.exe"
-          )
-
-          for target in "${targets[@]}"; do
-            read -r id os cpu binary <<<"$target"
-            pkg_dir="release-packages/${id}"
-            mkdir -p "${pkg_dir}/bin"
-            cp "release-artifacts/binary-${id}/bin/${binary}" "${pkg_dir}/bin/${binary}"
-            cp LICENSE "${pkg_dir}/LICENSE"
-            sed \
-              -e "s|__PACKAGE_NAME__|@wisflux/docmost-local-mcp-${id}|g" \
-              -e "s|__VERSION__|${VERSION}|g" \
-              -e "s|__OS__|${os}|g" \
-              -e "s|__CPU__|${cpu}|g" \
-              -e "s|__BINARY_NAME__|${binary}|g" \
-              npm/platform-template/package.json.tmpl > "${pkg_dir}/package.json"
-          done
-
-      - name: Pack npm packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          for dir in release-packages/*; do
-            (cd "$dir" && npm pack)
-          done
-
-      - name: Upload packaged npm directories
-        uses: actions/upload-artifact@v5
-        with:
-          name: npm-packages
-          path: release-packages
-          if-no-files-found: error
-
-  publish:
-    name: Publish to npm
-    runs-on: ubuntu-24.04
-    needs: package
-    if: github.event_name == 'push' || inputs.publish
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-
-      - name: Download packaged npm directories
-        uses: actions/download-artifact@v5
-        with:
-          name: npm-packages
-          path: release-packages
-
-      - name: Publish platform packages first
-        shell: bash
-        run: |
-          set -euo pipefail
-          for dir in \
-            release-packages/darwin-arm64 \
-            release-packages/darwin-x64 \
-            release-packages/linux-arm64 \
-            release-packages/linux-x64 \
-            release-packages/win32-arm64 \
-            release-packages/win32-x64; do
-            (cd "$dir" && npm publish --access public --provenance)
-          done
-
-      - name: Publish meta package
-        run: cd release-packages/meta && npm publish --access public --provenance
+      - name: Publish to npm
+        run: cd release-package && npm publish --access public --provenance
