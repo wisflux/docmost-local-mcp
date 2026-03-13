@@ -4,6 +4,10 @@
   "description": "Docmost MCP server for local IDE integrations",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wisflux/docmost-local-mcp.git"
+  },
   "bin": {
     "docmost-local-mcp": "./cli.js"
   },
