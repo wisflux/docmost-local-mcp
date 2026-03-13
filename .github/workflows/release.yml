@@ -163,7 +163,7 @@ jobs:
             read -r id os cpu binary <<<"$target"
             pkg_dir="release-packages/${id}"
             mkdir -p "${pkg_dir}/bin"
-            cp "release-artifacts/binary-${id}/${id}/bin/${binary}" "${pkg_dir}/bin/${binary}"
+            cp "release-artifacts/binary-${id}/bin/${binary}" "${pkg_dir}/bin/${binary}"
             cp LICENSE "${pkg_dir}/LICENSE"
             sed \
               -e "s|__PACKAGE_NAME__|@wisflux/docmost-local-mcp-${id}|g" \
