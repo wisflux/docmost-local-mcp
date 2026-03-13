@@ -1,36 +1,35 @@
 # @wisflux/docmost-local-mcp
 
-A local MCP server for [Docmost](https://docmost.com/) written in TypeScript for IDE integrations that launch via `npx`.
+A local MCP server for [Docmost](https://docmost.com/) implemented in Rust and launched through `npx`.
 
-It starts as a stdio MCP server, launches a small native auth window when authentication is needed, logs in against your Docmost instance, and then reuses the saved session for future tool calls.
+The published npm package is a small Node launcher plus a platform-specific Rust binary. At runtime the binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
 
 ## Features
 
 - `list_spaces`: list available Docmost spaces
 - `search_docs`: search documentation, optionally scoped to a space
 - `get_page`: fetch a page and return its content as Markdown
-- Small native auth window instead of relying on a browser tab
+- Native auth window on supported platforms, with browser fallback
 - Explicit Docmost instance selection via startup config
-- Session reuse with JWT expiry checks and automatic re-login when needed
+- Session reuse with JWT expiry checks and automatic re-login
+- OS keychain credential storage when available, with encrypted file fallback
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 18 or newer for `npx`
 - A reachable Docmost instance with email/password authentication enabled
 
 ## Installation
 
-Install or run through `npx`:
+Run directly with `npx`:
 
 ```bash
-npx @wisflux/docmost-local-mcp --base-url=https://docs.example.com
+npx -y @wisflux/docmost-local-mcp --base-url=https://docs.example.com
 ```
 
 ## IDE Configuration
 
 Most MCP clients can launch the server directly with `npx`.
-
-Example config shape:
 
 ```json
 {
@@ -43,26 +42,24 @@ Example config shape:
 }
 ```
 
-You can also provide the instance URL through an environment variable:
+You can also provide the base URL through an environment variable:
 
 ```bash
-DOCMOST_BASE_URL=https://docs.example.com npx @wisflux/docmost-local-mcp
+DOCMOST_BASE_URL=https://docs.example.com npx -y @wisflux/docmost-local-mcp
 ```
 
 ## Authentication Flow
 
-1. The IDE launches the MCP server over stdio.
-2. On the first authenticated tool call, the server starts a tiny local HTTP page and launches a native auth helper window that loads it.
-3. You enter your email and password there. If `--base-url` or `DOCMOST_BASE_URL` is set, the Docmost URL is preconfigured and locked.
-4. The server signs in to Docmost via `/api/auth/login`, extracts the `authToken` cookie, and saves the session locally.
-5. The helper window closes itself after successful login.
-6. Future calls reuse the stored token until it is close to expiry or rejected by Docmost.
-
-If the native helper is unavailable for the current platform, the server falls back to opening the local login page in your browser.
+1. The MCP client launches the server over stdio.
+2. On the first authenticated tool call, the server starts a local HTTP login page on `127.0.0.1`.
+3. The server opens a native auth window when available, or falls back to the system browser.
+4. You enter your email and password there. If `--base-url` or `DOCMOST_BASE_URL` is set, the Docmost URL is preconfigured and locked.
+5. The server signs in through `/api/auth/login`, extracts the `authToken` cookie, stores the session, and optionally stores credentials for automatic re-login.
+6. Future requests reuse the saved token until it is close to expiry or rejected by Docmost.
 
 ## Platform Notes
 
-The native auth helper uses the system webview on each platform:
+The native auth window uses the system webview on each platform:
 
 - macOS: `WKWebView`
 - Windows: `WebView2`
@@ -71,10 +68,8 @@ The native auth helper uses the system webview on each platform:
 Important caveats:
 
 - Windows needs the WebView2 runtime available
-- Linux desktop environments need the relevant WebKitGTK packages installed
-- Unsigned macOS binaries may show stricter launch prompts until the helper binaries are signed and notarized
-
-All platform helper binaries are bundled inside the published npm package under `helpers/`. CI builds each binary and places it before publishing.
+- Linux desktop environments need WebKitGTK packages installed
+- When the binary is built without the `native-webview` feature, browser fallback is always used
 
 ## Local State
 
@@ -88,10 +83,10 @@ Files used there:
 
 - `config.json`: last base URL and email
 - `session.json`: saved auth token and expiry
-- `credentials.enc.json`: encrypted email/password for automatic re-login
-- `credentials.key`: local encryption key used for the encrypted credentials file
+- `credentials.enc.json`: encrypted credential fallback when keychain storage is unavailable
+- `credentials.key`: local encryption key for the encrypted fallback credentials file
 
-The encrypted credentials file is meant to avoid storing raw passwords in plain text, but it is not equivalent to using an OS keychain or a hardware-backed secret store.
+Credentials are stored in the OS keychain when available. The encrypted file fallback is meant to avoid plain-text storage, but it is not equivalent to a hardware-backed secret store.
 
 ## Tool Reference
 
@@ -112,9 +107,9 @@ Inputs:
 
 - `slug_id`: the page slug ID returned by `search_docs`
 
-## Contributing
+## Development
 
-See `CONTRIBUTING.md`.
+For maintainer and contributor workflow details, see `CONTRIBUTING.md`.
 
 ## License
 

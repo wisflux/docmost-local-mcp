@@ -6,3 +6,8 @@ coverage
 native/auth-helper/target
 helpers
 *.tgz
+target
+release-artifacts
+release-packages
+npm/launcher/node_modules
+npm/platform-test-*

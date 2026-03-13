@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the package to npm"
+        description: "Publish the packages to npm"
         type: boolean
         default: false
 
@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 jobs:
-  build-helpers:
-    name: Build Helper (${{ matrix.target.id }})
+  build-binaries:
+    name: Build Binary (${{ matrix.target.id }})
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
@@ -24,44 +24,43 @@ jobs:
         target:
           - id: darwin-arm64
             runner: macos-15
-            platform: darwin
-            arch: arm64
+            os: darwin
+            cpu: arm64
+            binary_name: docmost-local-mcp
           - id: darwin-x64
             runner: macos-15-intel
-            platform: darwin
-            arch: x64
+            os: darwin
+            cpu: x64
+            binary_name: docmost-local-mcp
           - id: linux-arm64
             runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
+            os: linux
+            cpu: arm64
+            binary_name: docmost-local-mcp
           - id: linux-x64
             runner: ubuntu-24.04
-            platform: linux
-            arch: x64
+            os: linux
+            cpu: x64
+            binary_name: docmost-local-mcp
           - id: win32-arm64
             runner: windows-11-arm
-            platform: win32
-            arch: arm64
+            os: win32
+            cpu: arm64
+            binary_name: docmost-local-mcp.exe
           - id: win32-x64
             runner: windows-2025
-            platform: win32
-            arch: x64
+            os: win32
+            cpu: x64
+            binary_name: docmost-local-mcp.exe
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/auth-helper
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -74,106 +73,156 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      - name: Build native helper
-        run: npm run build:helper
+      - name: Build release binary
+        run: cargo build --release
 
-      - name: Stage bundled helper
-        run: node scripts/sync-helper-binary.mjs ${{ matrix.target.platform }} ${{ matrix.target.arch }}
+      - name: Stage binary artifact
+        shell: bash
+        run: |
+          mkdir -p "release-binary/${{ matrix.target.id }}/bin"
+          cp "target/release/${{ matrix.target.binary_name }}" "release-binary/${{ matrix.target.id }}/bin/${{ matrix.target.binary_name }}"
 
-      - name: Upload helper artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
-          name: helper-${{ matrix.target.id }}
-          path: helpers/
+          name: binary-${{ matrix.target.id }}
+          path: release-binary/${{ matrix.target.id }}
           if-no-files-found: error
 
   package:
-    name: Package Release Artifact
+    name: Package npm Artifacts
     runs-on: ubuntu-24.04
-    needs: build-helpers
+    needs: build-binaries
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
-          cache: npm
+          node-version: 20
+          registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
-      - name: Download bundled helper artifacts
+      - name: Run Rust tests
+        run: cargo test
+
+      - name: Download binary artifacts
         uses: actions/download-artifact@v5
         with:
-          pattern: helper-*
-          path: helpers
-          merge-multiple: true
+          pattern: binary-*
+          path: release-artifacts
+          merge-multiple: false
 
-      - name: Verify bundled helper set
+      - name: Build npm package directories
+        shell: bash
         run: |
-          test -f helpers/darwin-arm64/docmost-auth-helper
-          test -f helpers/darwin-x64/docmost-auth-helper
-          test -f helpers/linux-arm64/docmost-auth-helper
-          test -f helpers/linux-x64/docmost-auth-helper
-          test -f helpers/win32-arm64/docmost-auth-helper.exe
-          test -f helpers/win32-x64/docmost-auth-helper.exe
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          fi
+          export VERSION
+          mkdir -p release-packages/meta
+          cp npm/launcher/cli.js release-packages/meta/
+          cp npm/launcher/package.json release-packages/meta/
+          cp README.md LICENSE release-packages/meta/
 
-      - name: Build package
-        run: npm run build
+          node -e "
+            const fs = require('fs');
+            const pkgPath = 'release-packages/meta/package.json';
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            pkg.version = process.env.VERSION;
+            Object.keys(pkg.optionalDependencies).forEach((name) => { pkg.optionalDependencies[name] = process.env.VERSION; });
+            pkg.files = ['cli.js', 'README.md', 'LICENSE'];
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+          "
 
-      - name: Run tests
-        run: npm test
+          targets=(
+            "darwin-arm64 darwin arm64 docmost-local-mcp"
+            "darwin-x64 darwin x64 docmost-local-mcp"
+            "linux-arm64 linux arm64 docmost-local-mcp"
+            "linux-x64 linux x64 docmost-local-mcp"
+            "win32-arm64 win32 arm64 docmost-local-mcp.exe"
+            "win32-x64 win32 x64 docmost-local-mcp.exe"
+          )
 
-      - name: Create npm tarball
-        run: npm pack
+          for target in "${targets[@]}"; do
+            read -r id os cpu binary <<<"$target"
+            pkg_dir="release-packages/${id}"
+            mkdir -p "${pkg_dir}/bin"
+            cp "release-artifacts/binary-${id}/${id}/bin/${binary}" "${pkg_dir}/bin/${binary}"
+            cp LICENSE "${pkg_dir}/LICENSE"
+            sed \
+              -e "s|__PACKAGE_NAME__|@wisflux/docmost-local-mcp-${id}|g" \
+              -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__OS__|${os}|g" \
+              -e "s|__CPU__|${cpu}|g" \
+              -e "s|__BINARY_NAME__|${binary}|g" \
+              npm/platform-template/package.json.tmpl > "${pkg_dir}/package.json"
+          done
 
-      - name: Upload npm package artifact
+      - name: Pack npm packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in release-packages/*; do
+            (cd "$dir" && npm pack)
+          done
+
+      - name: Upload packaged npm directories
         uses: actions/upload-artifact@v5
         with:
-          name: npm-package
-          path: "*.tgz"
+          name: npm-packages
+          path: release-packages
           if-no-files-found: error
 
   publish:
-    name: Publish To npm
+    name: Publish to npm
     runs-on: ubuntu-24.04
     needs: package
     if: github.event_name == 'push' || inputs.publish
     permissions:
       contents: read
-      id-token: write   # Required for npm Trusted Publishing (OIDC)
+      id-token: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
-          cache: npm
+          node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Download bundled helper artifacts
+      - name: Download packaged npm directories
         uses: actions/download-artifact@v5
         with:
-          pattern: helper-*
-          path: helpers
-          merge-multiple: true
+          name: npm-packages
+          path: release-packages
 
-      - name: Build package
-        run: npm run build
+      - name: Publish platform packages first
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in \
+            release-packages/darwin-arm64 \
+            release-packages/darwin-x64 \
+            release-packages/linux-arm64 \
+            release-packages/linux-x64 \
+            release-packages/win32-arm64 \
+            release-packages/win32-x64; do
+            (cd "$dir" && npm publish --access public --provenance)
+          done
 
-      - name: Run tests
-        run: npm test
-
-      - name: Publish package
-        run: npm publish --access public --provenance
-        # Uses Trusted Publishing (OIDC). Configure at npm package Settings → Trusted publishing
+      - name: Publish meta package
+        run: cd release-packages/meta && npm publish --access public --provenance
