@@ -11,7 +11,7 @@ use crate::{
     auth::manager::AuthManager,
     docmost_client::DocmostClient,
     prosemirror::prosemirror_to_markdown,
-    types::{GetPageInput, SearchDocsInput, StartupConfig},
+    types::{EmptyInput, GetPageInput, SearchDocsInput, StartupConfig},
 };
 
 static HIGHLIGHT_TAGS_RE: Lazy<Regex> =
@@ -43,7 +43,10 @@ impl DocmostMcpServer {
         description = "List all available documentation spaces in Docmost, including names, slugs, and IDs.",
         annotations(title = "List Docmost Spaces", read_only_hint = true)
     )]
-    async fn list_spaces(&self) -> Result<String, ErrorData> {
+    async fn list_spaces(
+        &self,
+        Parameters(_): Parameters<EmptyInput>,
+    ) -> Result<String, ErrorData> {
         let spaces = self.client.list_spaces().await.map_err(internal_error)?;
 
         if spaces.is_empty() {

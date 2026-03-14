@@ -103,6 +103,9 @@ pub struct DocmostPageCreator {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct EmptyInput {}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct SearchDocsInput {
     #[schemars(description = "Full-text query to search for.")]
     pub query: String,
