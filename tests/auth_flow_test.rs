@@ -125,7 +125,7 @@ async fn docmost_client_retries_after_401() -> Result<()> {
     let spaces = client.list_spaces().await?;
 
     assert_eq!(spaces.len(), 1);
-    assert_eq!(spaces[0].name, "Engineering");
+    assert_eq!(spaces[0].name.as_deref(), Some("Engineering"));
     assert_eq!(server.state.login_count.load(Ordering::SeqCst), 1);
     assert_eq!(server.state.spaces_count.load(Ordering::SeqCst), 2);
 

@@ -1,6 +1,6 @@
 {
   "name": "@wisflux/docmost-local-mcp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Docmost MCP server for local IDE integrations",
   "license": "MIT",
   "type": "module",

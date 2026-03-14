@@ -6,7 +6,10 @@ use serde_json::Value;
 use crate::{
     auth::manager::{AuthManager, safe_read_response_text},
     debug::debug_log,
-    types::{DocmostPage, DocmostSearchResult, DocmostSpace},
+    types::{
+        DocmostComment, DocmostCurrentUserResponse, DocmostPage, DocmostPageListItem,
+        DocmostSearchResult, DocmostSpace, DocmostSpaceWithMembership, DocmostUser,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -25,6 +28,12 @@ struct ApiEnvelope<T> {
 pub enum ListResult<T> {
     List(Vec<T>),
     Wrapped { items: Option<Vec<T>> },
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CursorListResult<T> {
+    pub items: Option<Vec<T>>,
 }
 
 impl DocmostClient {
@@ -62,6 +71,15 @@ impl DocmostClient {
         Ok(normalize_list_result(Some(result)))
     }
 
+    pub async fn get_space(&self, space_id: &str) -> Result<DocmostSpaceWithMembership> {
+        self.request(
+            "/api/spaces/info",
+            serde_json::json!({ "spaceId": space_id }),
+            true,
+        )
+        .await
+    }
+
     pub async fn get_page(&self, slug_id: &str) -> Result<Option<DocmostPage>> {
         self.request(
             "/api/pages/info",
@@ -69,6 +87,102 @@ impl DocmostClient {
             true,
         )
         .await
+    }
+
+    pub async fn list_pages(
+        &self,
+        space_id: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+    ) -> Result<Vec<DocmostPageListItem>> {
+        let mut payload = serde_json::json!({ "spaceId": space_id });
+        if let Some(limit) = limit {
+            payload["limit"] = Value::from(limit);
+        }
+        if let Some(cursor) = cursor {
+            payload["cursor"] = Value::String(cursor.to_string());
+        }
+
+        let result = self
+            .request::<CursorListResult<DocmostPageListItem>>("/api/pages/recent", payload, true)
+            .await?;
+        Ok(normalize_cursor_list_result(result))
+    }
+
+    pub async fn list_child_pages(
+        &self,
+        page_id: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+    ) -> Result<Vec<DocmostPageListItem>> {
+        let mut payload = serde_json::json!({ "pageId": page_id });
+        if let Some(limit) = limit {
+            payload["limit"] = Value::from(limit);
+        }
+        if let Some(cursor) = cursor {
+            payload["cursor"] = Value::String(cursor.to_string());
+        }
+
+        let result = self
+            .request::<CursorListResult<DocmostPageListItem>>(
+                "/api/pages/sidebar-pages",
+                payload,
+                true,
+            )
+            .await?;
+        Ok(normalize_cursor_list_result(result))
+    }
+
+    pub async fn get_comments(
+        &self,
+        page_id: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+    ) -> Result<Vec<DocmostComment>> {
+        let mut payload = serde_json::json!({ "pageId": page_id });
+        if let Some(limit) = limit {
+            payload["limit"] = Value::from(limit);
+        }
+        if let Some(cursor) = cursor {
+            payload["cursor"] = Value::String(cursor.to_string());
+        }
+
+        let result = self
+            .request::<CursorListResult<DocmostComment>>("/api/comments", payload, true)
+            .await?;
+        Ok(normalize_cursor_list_result(result))
+    }
+
+    pub async fn list_workspace_members(
+        &self,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+        query: Option<&str>,
+        admin_view: Option<bool>,
+    ) -> Result<Vec<DocmostUser>> {
+        let mut payload = serde_json::json!({});
+        if let Some(limit) = limit {
+            payload["limit"] = Value::from(limit);
+        }
+        if let Some(cursor) = cursor {
+            payload["cursor"] = Value::String(cursor.to_string());
+        }
+        if let Some(query) = query {
+            payload["query"] = Value::String(query.to_string());
+        }
+        if let Some(admin_view) = admin_view {
+            payload["adminView"] = Value::Bool(admin_view);
+        }
+
+        let result = self
+            .request::<CursorListResult<DocmostUser>>("/api/workspace/members", payload, true)
+            .await?;
+        Ok(normalize_cursor_list_result(result))
+    }
+
+    pub async fn get_current_user(&self) -> Result<DocmostCurrentUserResponse> {
+        self.request("/api/users/me", serde_json::json!({}), true)
+            .await
     }
 
     async fn request<T>(
@@ -136,6 +250,10 @@ pub fn normalize_list_result<T>(result: Option<ListResult<T>>) -> Vec<T> {
         Some(ListResult::Wrapped { items }) => items.unwrap_or_default(),
         None => Vec::new(),
     }
+}
+
+pub fn normalize_cursor_list_result<T>(result: CursorListResult<T>) -> Vec<T> {
+    result.items.unwrap_or_default()
 }
 
 async fn parse_response<T>(response: Response) -> Result<T>

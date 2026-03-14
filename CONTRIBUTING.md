@@ -118,6 +118,7 @@ If Linux native-webview builds fail locally or in CI, check these first.
 - `cargo fmt --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
+- MCP tool registration coverage, including object-shaped input schemas for no-arg tools
 - a launcher smoke test with a mock binary in `bin/`
 - release binary builds on:
   - `macos-15`

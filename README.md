@@ -7,8 +7,15 @@ The published npm package is a small Node launcher that downloads the platform-s
 ## Features
 
 - `list_spaces`: list available Docmost spaces
+- `get_space`: fetch details for a specific space
 - `search_docs`: search documentation, optionally scoped to a space
+- `search_pages`: alias for page search with the same inputs as `search_docs`
 - `get_page`: fetch a page and return its content as Markdown
+- `list_pages`: list recent pages in a space
+- `list_child_pages`: list child pages for a parent page ID
+- `get_comments`: list comments for a page
+- `list_workspace_members`: list workspace members
+- `get_current_user`: fetch the authenticated user and workspace context
 - Native auth window on supported platforms, with browser fallback
 - Explicit Docmost instance selection via startup config
 - Session reuse with JWT expiry checks and automatic re-login
@@ -101,11 +108,65 @@ Inputs:
 - `query`: required search text
 - `space_id`: optional Docmost space ID
 
+### `search_pages`
+
+Inputs:
+
+- `query`: required search text
+- `space_id`: optional Docmost space ID
+
+This is a backward-compatible alias for page search. `search_docs` remains available.
+
+### `get_space`
+
+Inputs:
+
+- `space_id`: required Docmost space ID
+
 ### `get_page`
 
 Inputs:
 
 - `slug_id`: the page slug ID returned by `search_docs`
+
+### `list_pages`
+
+Inputs:
+
+- `space_id`: required Docmost space ID
+- `limit`: optional page count limit
+- `cursor`: optional pagination cursor
+
+### `list_child_pages`
+
+Inputs:
+
+- `page_id`: required parent page ID
+- `limit`: optional page count limit
+- `cursor`: optional pagination cursor
+
+### `get_comments`
+
+Inputs:
+
+- `page_id`: required page ID
+- `limit`: optional comment count limit
+- `cursor`: optional pagination cursor
+
+### `list_workspace_members`
+
+Inputs:
+
+- `limit`: optional member count limit
+- `cursor`: optional pagination cursor
+- `query`: optional member search text
+- `admin_view`: optional admin visibility flag
+
+### `get_current_user`
+
+Inputs:
+
+- none
 
 ## Development
 
