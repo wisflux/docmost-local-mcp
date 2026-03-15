@@ -509,3 +509,26 @@ fn escape_html(value: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalAuthDefaults, render_login_html};
+
+    #[test]
+    fn login_page_prefills_and_locks_configured_base_url() {
+        let html = render_login_html(&LocalAuthDefaults {
+            base_url: Some("https://docs.example.com".to_string()),
+            email: Some("jane@example.com".to_string()),
+            base_url_readonly: true,
+        });
+
+        assert!(
+            html.contains(
+                r#"<input id="baseUrl" name="baseUrl" value="https://docs.example.com" placeholder="https://docs.example.com" readonly required />"#
+            ),
+            "expected base URL input to be prefilled and readonly, got:\n{html}"
+        );
+        assert!(html.contains(r#"value="jane@example.com""#));
+        assert!(html.contains("Configured by the MCP server startup options."));
+    }
+}

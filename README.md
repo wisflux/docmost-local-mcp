@@ -1,42 +1,88 @@
 # @wisflux/docmost-local-mcp
 
-A local MCP server for [Docmost](https://docmost.com/) implemented in Rust and launched through `npx`.
+MCP server for [Docmost](https://docmost.com/) that is built for self-hosted instances, especially deployments that do not have an enterprise license but still want reliable MCP access from local IDEs and AI tools.
 
-The published npm package is a small Node launcher that downloads the platform-specific Rust binary from GitHub Releases on install. At runtime the binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
+The package is launched with `npx`, while the actual server is a Rust binary downloaded from GitHub Releases during install. That binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
 
-## Features
+> The main reason this project exists: bring MCP access to self-hosted Docmost setups without making an enterprise license a prerequisite.
+
+## Why This Project
+
+Many MCP integrations are designed around hosted or enterprise assumptions. This project is intentionally optimized for self-hosted Docmost:
+
+- Works against your own Docmost base URL
+- Uses Docmost email/password authentication
+- Stores session state locally for reuse
+- Opens a local auth flow instead of requiring a separate hosted control plane
+- Ships as a simple `npx` entrypoint for easy IDE integration
+
+If you run your own Docmost and want it available inside Cursor, Claude Desktop, or another MCP client, this package is the straightforward path.
+
+## Highlights
+
+- Strong fit for self-hosted Docmost instances without enterprise licensing
+- Rust server core with a small Node launcher for predictable local installs
+- Native auth window on supported platforms, with browser fallback
+- Explicit Docmost instance selection via startup config
+- Session reuse with JWT expiry checks and automatic re-login
+- OS keychain credential storage on supported platforms
+- Clean tool surface for spaces, pages, comments, members, and current user context
+
+## Available Tools
 
 - `list_spaces`: list available Docmost spaces
 - `get_space`: fetch details for a specific space
 - `search_docs`: search documentation, optionally scoped to a space
-- `search_pages`: alias for page search with the same inputs as `search_docs`
+- `search_pages`: backward-compatible alias for `search_docs`
 - `get_page`: fetch a page and return its content as Markdown
 - `list_pages`: list recent pages in a space
 - `list_child_pages`: list child pages for a parent page ID
 - `get_comments`: list comments for a page
 - `list_workspace_members`: list workspace members
 - `get_current_user`: fetch the authenticated user and workspace context
-- Native auth window on supported platforms, with browser fallback
-- Explicit Docmost instance selection via startup config
-- Session reuse with JWT expiry checks and automatic re-login
-- OS keychain credential storage when available, with encrypted file fallback
+
+## Roadmap
+
+Write support is planned next.
+
+Planned write tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `create_page` | Create a new page in a space |
+| `update_page` | Update an existing page's title or content |
+| `duplicate_page` | Duplicate a page within its space |
+| `copy_page_to_space` | Copy a page to a different space |
+| `move_page` | Move a page to a different position or parent |
+| `move_page_to_space` | Move a page to a different space |
+| `create_space` | Create a new space |
+| `update_space` | Update a space's name or description |
+| `create_comment` | Add a comment to a page |
+| `update_comment` | Update an existing comment |
 
 ## Requirements
 
 - Node.js 18 or newer for `npx`
-- A reachable Docmost instance with email/password authentication enabled
+- A reachable Docmost instance
+- Email/password authentication enabled in that Docmost instance
 
-## Installation
+## Quick Start
 
-Run directly with `npx`:
+Run the server directly with `npx`:
 
 ```bash
 npx -y @wisflux/docmost-local-mcp --base-url=https://docs.example.com
 ```
 
-## IDE Configuration
+You can also provide the base URL with an environment variable:
 
-Most MCP clients can launch the server directly with `npx`.
+```bash
+DOCMOST_BASE_URL=https://docs.example.com npx -y @wisflux/docmost-local-mcp
+```
+
+## MCP Client Configuration
+
+Most MCP clients can launch the server directly with `npx`:
 
 ```json
 {
@@ -49,20 +95,33 @@ Most MCP clients can launch the server directly with `npx`.
 }
 ```
 
-You can also provide the base URL through an environment variable:
-
-```bash
-DOCMOST_BASE_URL=https://docs.example.com npx -y @wisflux/docmost-local-mcp
-```
+This setup works well when you want a fixed Docmost instance per client configuration. If `--base-url` or `DOCMOST_BASE_URL` is set, the login page shows that URL prefilled and locks the field. If no base URL is configured, the login flow asks for it during interactive sign-in.
 
 ## Authentication Flow
 
-1. The MCP client launches the server over stdio.
+1. Your MCP client launches the server over stdio.
 2. On the first authenticated tool call, the server starts a local HTTP login page on `127.0.0.1`.
 3. The server opens a native auth window when available, or falls back to the system browser.
-4. You enter your email and password there. If `--base-url` or `DOCMOST_BASE_URL` is set, the Docmost URL is preconfigured and locked.
+4. You enter your email and password there. If `--base-url` or `DOCMOST_BASE_URL` is set, the Docmost URL is prefilled and locked.
 5. The server signs in through `/api/auth/login`, extracts the `authToken` cookie, stores the session, and optionally stores credentials for automatic re-login.
 6. Future requests reuse the saved token until it is close to expiry or rejected by Docmost.
+
+## Local State And Credential Storage
+
+The server stores local state in:
+
+```text
+~/.docmost-local-mcp/
+```
+
+Files used there:
+
+- `config.json`: last base URL and email
+- `session.json`: saved auth token and expiry
+
+Credentials are stored in the OS keychain when available, which is the preferred path on supported platforms.
+
+If secure OS credential storage is unavailable, the server falls back to encrypted local credential storage so it can still support login reuse without writing plain-text credentials. That fallback is intentionally secondary to keychain-backed storage.
 
 ## Platform Notes
 
@@ -77,23 +136,6 @@ Important caveats:
 - Windows needs the WebView2 runtime available
 - Linux desktop environments need WebKitGTK packages installed
 - When the binary is built without the `native-webview` feature, browser fallback is always used
-
-## Local State
-
-The server stores state in:
-
-```text
-~/.docmost-local-mcp/
-```
-
-Files used there:
-
-- `config.json`: last base URL and email
-- `session.json`: saved auth token and expiry
-- `credentials.enc.json`: encrypted credential fallback when keychain storage is unavailable
-- `credentials.key`: local encryption key for the encrypted fallback credentials file
-
-Credentials are stored in the OS keychain when available. The encrypted file fallback is meant to avoid plain-text storage, but it is not equivalent to a hardware-backed secret store.
 
 ## Tool Reference
 
