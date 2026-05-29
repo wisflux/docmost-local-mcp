@@ -1,4 +1,5 @@
-use serde_json::Value;
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use serde_json::{Map, Value, json};
 
 pub fn prosemirror_to_markdown(content: &Value) -> String {
     if !is_document_node(content) {
@@ -49,11 +50,16 @@ fn convert_nodes(nodes: &[Value], indent: usize) -> String {
                 output.push(String::new());
             }
             Some("bulletList") => {
-                output.push(convert_list(children(node), false, indent));
+                output.push(convert_list(children(node), false, indent, 1));
                 output.push(String::new());
             }
             Some("orderedList") => {
-                output.push(convert_list(children(node), true, indent));
+                let start = node
+                    .get("attrs")
+                    .and_then(|attrs| attrs.get("start"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1);
+                output.push(convert_list(children(node), true, indent, start));
                 output.push(String::new());
             }
             Some("taskList") => {
@@ -174,7 +180,7 @@ fn extract_text(content: &[Value]) -> String {
     parts.join("")
 }
 
-fn convert_list(items: &[Value], ordered: bool, indent: usize) -> String {
+fn convert_list(items: &[Value], ordered: bool, indent: usize, start: u64) -> String {
     let mut output = Vec::new();
     let prefix = " ".repeat(indent);
 
@@ -197,7 +203,7 @@ fn convert_list(items: &[Value], ordered: bool, indent: usize) -> String {
         }
 
         let marker = if ordered {
-            format!("{}. ", index + 1)
+            format!("{}. ", start + index as u64)
         } else {
             "- ".to_string()
         };
@@ -309,4 +315,408 @@ fn children(node: &Value) -> &[Value] {
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[])
+}
+
+/// Convert a Markdown string into a Docmost ProseMirror document
+/// (`{ "type": "doc", "content": [...] }`).
+///
+/// This is the inverse of [`prosemirror_to_markdown`]. It emits the same node and mark
+/// `type` strings (and attr keys) the reader recognizes — note the Tiptap-style mark
+/// names `bold`/`italic` (not `strong`/`em`) — so the two round-trip. The `embed` node
+/// has no Markdown form and is never produced.
+pub fn markdown_to_prosemirror(content: &str) -> Value {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+
+    let mut builder = DocBuilder::new();
+    for event in Parser::new_ext(content, options) {
+        builder.handle(event);
+    }
+    builder.finish()
+}
+
+/// A block container being assembled while walking the Markdown event stream.
+struct Frame {
+    node_type: String,
+    attrs: Option<Map<String, Value>>,
+    content: Vec<Value>,
+    /// Set on a list frame once any of its items is a task item.
+    is_task_list: bool,
+    /// `Some` for a `codeBlock` frame; accumulates the raw (unmarked) code text.
+    code: Option<String>,
+}
+
+impl Frame {
+    fn new(node_type: &str) -> Self {
+        Self {
+            node_type: node_type.to_string(),
+            attrs: None,
+            content: Vec::new(),
+            is_task_list: false,
+            code: None,
+        }
+    }
+
+    fn into_value(self) -> Value {
+        let mut node = Map::new();
+        node.insert("type".to_string(), Value::String(self.node_type));
+        if let Some(attrs) = self.attrs {
+            node.insert("attrs".to_string(), Value::Object(attrs));
+        }
+
+        let content = match self.code {
+            Some(code) => {
+                let code = code.strip_suffix('\n').unwrap_or(&code).to_string();
+                if code.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text_node(&code, &[])]
+                }
+            }
+            None => self.content,
+        };
+        node.insert("content".to_string(), Value::Array(content));
+        Value::Object(node)
+    }
+}
+
+struct ImageState {
+    src: String,
+    alt: String,
+}
+
+struct DocBuilder {
+    stack: Vec<Frame>,
+    marks: Vec<Value>,
+    in_table_head: bool,
+    image: Option<ImageState>,
+}
+
+impl DocBuilder {
+    fn new() -> Self {
+        Self {
+            stack: vec![Frame::new("doc")],
+            marks: Vec::new(),
+            in_table_head: false,
+            image: None,
+        }
+    }
+
+    fn handle(&mut self, event: Event) {
+        match event {
+            Event::Start(tag) => self.start(tag),
+            Event::End(tag) => self.end(tag),
+            Event::Text(text) => self.text(&text),
+            Event::Code(code) => self.inline_code(&code),
+            Event::SoftBreak => {
+                let marks = self.marks.clone();
+                self.push_inline(text_node(" ", &marks));
+            }
+            Event::HardBreak => self.push_inline(json!({ "type": "hardBreak" })),
+            Event::Rule => self.append_to_top(json!({ "type": "horizontalRule" })),
+            Event::TaskListMarker(checked) => self.task_marker(checked),
+            _ => {}
+        }
+    }
+
+    fn start(&mut self, tag: Tag) {
+        match tag {
+            Tag::Paragraph => self.push_frame("paragraph"),
+            Tag::Heading { level, .. } => {
+                let mut frame = Frame::new("heading");
+                let mut attrs = Map::new();
+                attrs.insert("level".to_string(), json!(heading_level(level)));
+                frame.attrs = Some(attrs);
+                self.stack.push(frame);
+            }
+            Tag::BlockQuote(_) => self.push_frame("blockquote"),
+            Tag::CodeBlock(kind) => {
+                let language = match kind {
+                    CodeBlockKind::Fenced(info) => {
+                        info.split_whitespace().next().unwrap_or("").to_string()
+                    }
+                    CodeBlockKind::Indented => String::new(),
+                };
+                let mut frame = Frame::new("codeBlock");
+                let mut attrs = Map::new();
+                attrs.insert("language".to_string(), Value::String(language));
+                frame.attrs = Some(attrs);
+                frame.code = Some(String::new());
+                self.stack.push(frame);
+            }
+            Tag::List(Some(start)) => {
+                let mut frame = Frame::new("orderedList");
+                // The reader defaults to starting at 1; only record a non-default start.
+                if start != 1 {
+                    let mut attrs = Map::new();
+                    attrs.insert("start".to_string(), json!(start));
+                    frame.attrs = Some(attrs);
+                }
+                self.stack.push(frame);
+            }
+            Tag::List(None) => self.push_frame("bulletList"),
+            Tag::Item => self.push_frame("listItem"),
+            Tag::Table(_) => {
+                self.in_table_head = false;
+                self.push_frame("table");
+            }
+            Tag::TableHead => {
+                self.in_table_head = true;
+                self.push_frame("tableRow");
+            }
+            Tag::TableRow => self.push_frame("tableRow"),
+            Tag::TableCell => {
+                let cell_type = if self.in_table_head {
+                    "tableHeader"
+                } else {
+                    "tableCell"
+                };
+                self.push_frame(cell_type);
+            }
+            Tag::Emphasis => self.marks.push(json!({ "type": "italic" })),
+            Tag::Strong => self.marks.push(json!({ "type": "bold" })),
+            Tag::Strikethrough => self.marks.push(json!({ "type": "strike" })),
+            Tag::Link { dest_url, .. } => self
+                .marks
+                .push(json!({ "type": "link", "attrs": { "href": dest_url.to_string() } })),
+            Tag::Image { dest_url, .. } => {
+                self.image = Some(ImageState {
+                    src: dest_url.to_string(),
+                    alt: String::new(),
+                })
+            }
+            _ => {}
+        }
+    }
+
+    fn end(&mut self, tag: TagEnd) {
+        match tag {
+            TagEnd::Emphasis => self.pop_mark("italic"),
+            TagEnd::Strong => self.pop_mark("bold"),
+            TagEnd::Strikethrough => self.pop_mark("strike"),
+            TagEnd::Link => self.pop_mark("link"),
+            TagEnd::Image => self.finish_image(),
+            TagEnd::Paragraph => self.finish_paragraph(),
+            TagEnd::List(_) => self.finish_list(),
+            TagEnd::TableHead => {
+                // Subsequent rows are body rows whose cells are `tableCell`.
+                self.in_table_head = false;
+                self.close_frame();
+            }
+            TagEnd::Heading(_)
+            | TagEnd::BlockQuote(_)
+            | TagEnd::CodeBlock
+            | TagEnd::Item
+            | TagEnd::Table
+            | TagEnd::TableRow
+            | TagEnd::TableCell => self.close_frame(),
+            _ => {}
+        }
+    }
+
+    fn text(&mut self, text: &str) {
+        if let Some(image) = self.image.as_mut() {
+            image.alt.push_str(text);
+            return;
+        }
+        if let Some(code) = self.stack.last_mut().and_then(|frame| frame.code.as_mut()) {
+            code.push_str(text);
+            return;
+        }
+        let marks = self.marks.clone();
+        self.push_inline(text_node(text, &marks));
+    }
+
+    fn inline_code(&mut self, code: &str) {
+        // The `code` mark must be innermost (first in the array) so the reader, which
+        // applies marks in order, wraps the text with backticks before any surrounding
+        // bold/italic/link — e.g. **`x`**, not `**x**`.
+        let mut marks = vec![json!({ "type": "code" })];
+        marks.extend(self.marks.clone());
+        self.push_inline(text_node(code, &marks));
+    }
+
+    fn task_marker(&mut self, checked: bool) {
+        if let Some(frame) = self.stack.last_mut() {
+            frame.node_type = "taskItem".to_string();
+            let mut attrs = Map::new();
+            attrs.insert("checked".to_string(), Value::Bool(checked));
+            frame.attrs = Some(attrs);
+        }
+        let depth = self.stack.len();
+        if depth >= 2 {
+            self.stack[depth - 2].is_task_list = true;
+        }
+    }
+
+    /// Append an inline node, wrapping it in a paragraph when the current frame is a
+    /// container (list item, table cell) that holds block children.
+    fn push_inline(&mut self, node: Value) {
+        if matches!(self.top_type(), Some("paragraph") | Some("heading")) {
+            self.append_to_top(node);
+        } else {
+            self.append_to_trailing_paragraph(node);
+        }
+    }
+
+    fn append_to_trailing_paragraph(&mut self, node: Value) {
+        let Some(frame) = self.stack.last_mut() else {
+            return;
+        };
+        let has_paragraph = matches!(
+            frame
+                .content
+                .last()
+                .and_then(|child| child.get("type"))
+                .and_then(Value::as_str),
+            Some("paragraph")
+        );
+        // Don't open a paragraph just to hold leading whitespace (e.g. a soft break at
+        // a container boundary), which would render as a spurious empty paragraph.
+        if !has_paragraph && is_whitespace_text(&node) {
+            return;
+        }
+        if !has_paragraph {
+            frame
+                .content
+                .push(json!({ "type": "paragraph", "content": [] }));
+        }
+        if let Some(Value::Object(paragraph)) = frame.content.last_mut()
+            && let Some(Value::Array(items)) = paragraph.get_mut("content")
+        {
+            items.push(node);
+        }
+    }
+
+    fn finish_image(&mut self) {
+        if let Some(image) = self.image.take() {
+            let node = json!({
+                "type": "image",
+                "attrs": { "src": image.src, "alt": image.alt }
+            });
+            self.append_to_top(node);
+        }
+    }
+
+    fn finish_paragraph(&mut self) {
+        if self.stack.len() <= 1 {
+            return;
+        }
+        let mut frame = self.stack.pop().unwrap();
+        if frame.content.is_empty() {
+            return;
+        }
+        // CommonMark wraps a top-level image in a paragraph; hoist a lone-image
+        // paragraph so the image becomes a block node the reader can render.
+        let all_images = frame
+            .content
+            .iter()
+            .all(|child| child.get("type").and_then(Value::as_str) == Some("image"));
+        if all_images {
+            for image in std::mem::take(&mut frame.content) {
+                self.append_to_top(image);
+            }
+        } else {
+            self.append_to_top(frame.into_value());
+        }
+    }
+
+    fn finish_list(&mut self) {
+        if self.stack.len() <= 1 {
+            return;
+        }
+        let mut frame = self.stack.pop().unwrap();
+        // A taskList must contain only taskItems, and a bulletList/orderedList only
+        // listItems — the reader skips the wrong kind. When a list has any task marker,
+        // homogenize it to a taskList and coerce plain items to unchecked task items so
+        // no item is dropped (rather than losing either the tasks or the plain items).
+        if frame.is_task_list {
+            for item in &mut frame.content {
+                if item.get("type").and_then(Value::as_str) == Some("listItem")
+                    && let Value::Object(object) = item
+                {
+                    object.insert("type".to_string(), Value::String("taskItem".to_string()));
+                    object.insert("attrs".to_string(), json!({ "checked": false }));
+                }
+            }
+            frame.node_type = "taskList".to_string();
+        }
+        self.append_to_top(frame.into_value());
+    }
+
+    fn close_frame(&mut self) {
+        if self.stack.len() <= 1 {
+            return;
+        }
+        let frame = self.stack.pop().unwrap();
+        self.append_to_top(frame.into_value());
+    }
+
+    fn pop_mark(&mut self, kind: &str) {
+        if let Some(position) = self
+            .marks
+            .iter()
+            .rposition(|mark| mark.get("type").and_then(Value::as_str) == Some(kind))
+        {
+            self.marks.remove(position);
+        }
+    }
+
+    fn append_to_top(&mut self, node: Value) {
+        if let Some(frame) = self.stack.last_mut() {
+            frame.content.push(node);
+        }
+    }
+
+    fn push_frame(&mut self, node_type: &str) {
+        self.stack.push(Frame::new(node_type));
+    }
+
+    fn top_type(&self) -> Option<&str> {
+        self.stack.last().map(|frame| frame.node_type.as_str())
+    }
+
+    fn finish(mut self) -> Value {
+        while self.stack.len() > 1 {
+            let frame = self.stack.pop().unwrap();
+            self.append_to_top(frame.into_value());
+        }
+        self.stack
+            .pop()
+            .map(Frame::into_value)
+            .unwrap_or_else(|| json!({ "type": "doc", "content": [] }))
+    }
+}
+
+fn text_node(text: &str, marks: &[Value]) -> Value {
+    let mut node = Map::new();
+    node.insert("type".to_string(), Value::String("text".to_string()));
+    node.insert("text".to_string(), Value::String(text.to_string()));
+    if !marks.is_empty() {
+        node.insert("marks".to_string(), Value::Array(marks.to_vec()));
+    }
+    Value::Object(node)
+}
+
+fn is_whitespace_text(node: &Value) -> bool {
+    node.get("type").and_then(Value::as_str) == Some("text")
+        && node.get("marks").is_none()
+        && node
+            .get("text")
+            .and_then(Value::as_str)
+            .map(|text| text.trim().is_empty())
+            .unwrap_or(false)
+}
+
+fn heading_level(level: HeadingLevel) -> u64 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
 }

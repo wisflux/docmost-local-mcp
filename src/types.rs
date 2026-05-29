@@ -266,6 +266,38 @@ pub struct GetCommentsInput {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CreatePageInput {
+    #[schemars(description = "The Docmost space ID (UUID) to create the page in.")]
+    pub space_id: String,
+    #[schemars(description = "Page title.")]
+    pub title: String,
+    #[serde(default)]
+    #[schemars(
+        description = "Page body as Markdown; converted to ProseMirror JSON before sending."
+    )]
+    pub markdown: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Optional parent page ID to nest this page under (must be in the same space)."
+    )]
+    pub parent_page_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct UpdatePageInput {
+    #[schemars(description = "The Docmost page ID or slug ID to update.")]
+    pub page_id: String,
+    #[serde(default)]
+    #[schemars(description = "Optional new page title. Omit to leave the title unchanged.")]
+    pub title: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Optional new page body as Markdown; replaces the existing content. Omit to leave content unchanged."
+    )]
+    pub markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ListWorkspaceMembersInput {
     #[serde(default)]
     #[schemars(description = "Optional number of members to return.")]

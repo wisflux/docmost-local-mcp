@@ -40,17 +40,17 @@ If you run your own Docmost and want it available inside Cursor, Claude Desktop,
 - `get_comments`: list comments for a page
 - `list_workspace_members`: list workspace members
 - `get_current_user`: fetch the authenticated user and workspace context
+- `create_page`: create a new page in a space from Markdown content
+- `update_page`: update an existing page's title and/or Markdown content
 
 ## Roadmap
 
-Write support is planned next.
+More write support is planned next.
 
 Planned write tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `create_page` | Create a new page in a space |
-| `update_page` | Update an existing page's title or content |
 | `duplicate_page` | Duplicate a page within its space |
 | `copy_page_to_space` | Copy a page to a different space |
 | `move_page` | Move a page to a different position or parent |
@@ -209,6 +209,26 @@ Inputs:
 Inputs:
 
 - none
+
+### `create_page`
+
+Inputs:
+
+- `space_id`: required Docmost space ID (UUID) to create the page in
+- `title`: required page title
+- `markdown`: optional page body as Markdown (converted to ProseMirror before sending)
+- `parent_page_id`: optional parent page ID to nest under (must be in the same space)
+
+### `update_page`
+
+Inputs:
+
+- `page_id`: required Docmost page ID or slug ID
+- `title`: optional new title (omit to leave unchanged)
+- `markdown`: optional new body as Markdown; replaces the existing content (omit to leave unchanged)
+
+Content changes are applied through Docmost's collaborative editor, so an updated page's
+body may take a moment to fully persist after the call returns.
 
 ## Development
 

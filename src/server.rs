@@ -21,7 +21,7 @@ impl ServerHandler for DocmostMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Read-only Docmost MCP server for listing spaces, searching docs, and fetching pages."
+                "Docmost MCP server for listing spaces, searching docs, and fetching pages, plus creating and updating pages from Markdown."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

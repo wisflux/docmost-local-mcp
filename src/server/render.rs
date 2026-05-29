@@ -2,8 +2,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::types::{
-    DocmostComment, DocmostCurrentUserResponse, DocmostPageListItem, DocmostSearchResult,
-    DocmostUser,
+    DocmostComment, DocmostCurrentUserResponse, DocmostPage, DocmostPageListItem,
+    DocmostSearchResult, DocmostUser,
 };
 
 static HIGHLIGHT_TAGS_RE: Lazy<Regex> =
@@ -209,6 +209,31 @@ pub fn format_current_user(response: &DocmostCurrentUserResponse) -> String {
         ),
     ];
 
+    lines.join("\n")
+}
+
+pub fn format_created_page(page: &DocmostPage, requested_title: &str) -> String {
+    let title = page.title.as_deref().unwrap_or(requested_title);
+    let lines = [
+        format!("Created Docmost page \"{title}\"."),
+        String::new(),
+        format!("Page ID: {}", format_optional_id(page.id.as_deref())),
+        format!("Slug ID: {}", format_optional_id(page.slug_id.as_deref())),
+        format!("Space ID: {}", format_optional_id(page.space_id.as_deref())),
+    ];
+    lines.join("\n")
+}
+
+pub fn format_updated_page(page: &DocmostPage) -> String {
+    let title = page.title.as_deref().unwrap_or("Untitled");
+    let lines = [
+        format!("Updated Docmost page \"{title}\"."),
+        String::new(),
+        format!("Page ID: {}", format_optional_id(page.id.as_deref())),
+        format!("Slug ID: {}", format_optional_id(page.slug_id.as_deref())),
+        "Note: content changes are applied via the collaborative editor and may take a moment to fully persist."
+            .to_string(),
+    ];
     lines.join("\n")
 }
 

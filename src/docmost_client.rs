@@ -185,6 +185,52 @@ impl DocmostClient {
             .await
     }
 
+    pub async fn create_page(
+        &self,
+        space_id: &str,
+        title: &str,
+        content: Option<&Value>,
+        parent_page_id: Option<&str>,
+    ) -> Result<DocmostPage> {
+        // Docmost defaults `format` to "json", which uses `content` verbatim as the
+        // ProseMirror document object (it must NOT be stringified).
+        let mut payload = serde_json::json!({
+            "spaceId": space_id,
+            "title": title,
+        });
+        if let Some(content) = content {
+            payload["content"] = content.clone();
+        }
+        if let Some(parent_page_id) = parent_page_id {
+            payload["parentPageId"] = Value::String(parent_page_id.to_string());
+        }
+
+        self.request::<DocmostPage>("/api/pages/create", payload, true)
+            .await
+    }
+
+    pub async fn update_page(
+        &self,
+        page_id: &str,
+        title: Option<&str>,
+        content: Option<&Value>,
+    ) -> Result<DocmostPage> {
+        let mut payload = serde_json::json!({ "pageId": page_id });
+        if let Some(title) = title {
+            payload["title"] = Value::String(title.to_string());
+        }
+        if let Some(content) = content {
+            // Docmost only applies a content change when `content`, `operation`, and
+            // `format` are all present; `operation` has no server-side default.
+            payload["content"] = content.clone();
+            payload["operation"] = Value::String("replace".to_string());
+            payload["format"] = Value::String("json".to_string());
+        }
+
+        self.request::<DocmostPage>("/api/pages/update", payload, true)
+            .await
+    }
+
     async fn request<T>(
         &self,
         endpoint: &str,

@@ -43,6 +43,8 @@ async fn server_lists_expected_tools() -> Result<()> {
         "get_comments",
         "list_workspace_members",
         "get_current_user",
+        "create_page",
+        "update_page",
     ] {
         assert!(
             tool_names.iter().any(|name| name == expected),
@@ -143,6 +145,9 @@ async fn server_required_input_fields_are_present() -> Result<()> {
         ("get_comments", "page_id"),
         ("search_docs", "query"),
         ("search_pages", "query"),
+        ("create_page", "space_id"),
+        ("create_page", "title"),
+        ("update_page", "page_id"),
     ] {
         let tool = tools
             .tools
