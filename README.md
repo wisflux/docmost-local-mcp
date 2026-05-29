@@ -230,6 +230,9 @@ Inputs:
 Content changes are applied through Docmost's collaborative editor, so an updated page's
 body may take a moment to fully persist after the call returns.
 
+For the full design, Markdown→ProseMirror conversion details, verified Docmost API
+fields, and version caveats, see [docs/write-tools.md](docs/write-tools.md).
+
 ## Development
 
 For maintainer and contributor workflow details, see `CONTRIBUTING.md`.
