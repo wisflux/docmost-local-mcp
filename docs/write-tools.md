@@ -182,7 +182,8 @@ Insufficient permission returns `403`, surfaced to the caller as a clear error
 | [`src/server/tools.rs`](../src/server/tools.rs) | Add the two `#[tool]` methods |
 | [`src/server/render.rs`](../src/server/render.rs) | Add `format_created_page`, `format_updated_page` |
 | [`src/server.rs`](../src/server.rs) | Update the server instructions string |
-| `tests/` | `docmost_write_test.rs` (request-body assertions) + converter tests in `prosemirror_test.rs` + tool coverage in `mcp_server_test.rs` |
+| `tests/` | `docmost_write_test.rs` (request-body assertions) + converter tests in `prosemirror_test.rs` + tool coverage in `mcp_server_test.rs` + `live_e2e_test.rs` (gated live test) |
+| `scripts/` | `e2e-live.sh` runner + `e2e-live.env.example` template |
 
 ## Tests
 
@@ -202,6 +203,69 @@ not installed — see [`CLAUDE.md`](../CLAUDE.md)):
 ```bash
 cargo test --no-default-features
 ```
+
+### What the automated tests do and do not cover
+
+| Layer | Verifies | Hits a real Docmost? |
+| --- | --- | --- |
+| Unit (`prosemirror_test.rs`) | Markdown↔ProseMirror conversion + round-trip | No |
+| Client (`docmost_write_test.rs`) | Exact HTTP request body, against a **mock** axum server | No (fake server) |
+| Tool surface (`mcp_server_test.rs`) | Tools registered with the right schemas | No |
+
+These prove *"the client sends what the verified Docmost API expects"* — but **not**
+that your running server accepts it and a page actually appears. That last mile is
+the live E2E test below.
+
+## End-to-end testing against a real Docmost
+
+A gated live test ([`tests/live_e2e_test.rs`](../tests/live_e2e_test.rs)) walks the
+full path against a real server:
+
+1. **headless login** with email/password (no interactive browser);
+2. `list_spaces` → pick a space (or use `DOCMOST_SPACE_ID`);
+3. `create_page` with a sample Markdown document (headings, marks, lists, task
+   lists, code block, table);
+4. `get_page` → assert the body round-trips back to the expected Markdown;
+5. `update_page` (new title + body), then **`get_page` re-polled** up to ~10× to
+   account for Docmost's asynchronous Yjs persistence;
+6. report the created page's slug/id.
+
+It is marked `#[ignore]`, so it never runs in CI or a normal `cargo test`, and it
+reads all credentials from the environment at run time — nothing secret is committed.
+
+### How to run it
+
+```bash
+# Option A: a local, git-ignored env file
+cp scripts/e2e-live.env.example .env.e2e
+$EDITOR .env.e2e          # set DOCMOST_BASE_URL / DOCMOST_EMAIL / DOCMOST_PASSWORD
+./scripts/e2e-live.sh
+
+# Option B: inline env, no file
+DOCMOST_BASE_URL=https://docs.example.com \
+DOCMOST_EMAIL=you@example.com \
+DOCMOST_PASSWORD=secret \
+cargo test --test live_e2e_test --no-default-features -- --ignored --nocapture
+```
+
+Environment variables:
+
+| Var | Required | Meaning |
+| --- | --- | --- |
+| `DOCMOST_BASE_URL` | yes | Your Docmost base URL |
+| `DOCMOST_EMAIL` / `DOCMOST_PASSWORD` | yes | Login (used headlessly; never stored in the repo) |
+| `DOCMOST_SPACE_ID` | no | Space to create in (default: first from `list_spaces`) |
+| `DOCMOST_PARENT_PAGE_ID` | no | Create the page under this parent (same space) |
+
+Notes:
+- The test **creates and updates a real page**. There is no delete tool yet, so the
+  page remains afterwards — remove it from the Docmost UI if you want. It uses an
+  obvious throwaway title.
+- The session is cached in a temp dir (and `DOCMOST_DISABLE_KEYRING=1` is set), so it
+  does not touch your real `~/.docmost-local-mcp` or OS keyring.
+- If the update step fails the poll, that is the **version/async caveat** in action:
+  confirm the page in the UI and check your Docmost version supports the
+  `operation`/`format` update path.
 
 ## Roadmap
 

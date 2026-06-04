@@ -11,3 +11,7 @@ release-artifacts
 release-packages
 npm/launcher/node_modules
 npm/launcher/bin
+
+# Local live-E2E credentials (never commit)
+.env.e2e
+.env
