@@ -27,7 +27,7 @@ use anyhow::{Context, Result, bail};
 use docmost_local_mcp::{
     auth::manager::AuthManager,
     docmost_client::DocmostClient,
-    prosemirror::{markdown_to_prosemirror, prosemirror_to_markdown},
+    prosemirror::prosemirror_to_markdown,
     startup_config::normalize_base_url,
     types::{LoginInput, StartupConfig},
 };
@@ -41,9 +41,9 @@ fn env(key: &str) -> Option<String> {
 }
 
 /// A representative document exercising most of the converter's node/mark set.
+/// Note: no leading `# heading` — the tool prepends `# {title}` itself, and the
+/// importer turns the first H1 into the page title (removing it from the body).
 const SAMPLE_MARKDOWN: &str = "\
-# E2E Heading
-
 A paragraph with **bold**, *italic*, `inline code`, ~~strike~~, and a \
 [link](https://docmost.com).
 
@@ -123,11 +123,15 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
     };
     let parent_page_id = env("DOCMOST_PARENT_PAGE_ID");
 
-    // --- Phase 3.2: create_page ---
+    // --- Phase 3.2: create_page (body routed through the import endpoint) ---
     let title = "E2E Test Page (docmost-local-mcp)";
-    let content = markdown_to_prosemirror(SAMPLE_MARKDOWN);
     let created = client
-        .create_page(&space_id, title, Some(&content), parent_page_id.as_deref())
+        .create_page(
+            &space_id,
+            title,
+            Some(SAMPLE_MARKDOWN),
+            parent_page_id.as_deref(),
+        )
         .await
         .context("create_page failed")?;
 
@@ -139,9 +143,20 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
         .slug_id
         .clone()
         .context("create response missing slug id")?;
-    eprintln!("[e2e] created page id={page_id} slug={slug_id}");
+    eprintln!(
+        "[e2e] created page id={page_id} slug={slug_id} title={:?}",
+        created.title
+    );
 
-    // --- Phase 3.3: get_page confirms the body round-trips ---
+    // The prepended `# {title}` becomes the page title (importer strips it from the body).
+    if created.title.as_deref() != Some(title) {
+        bail!(
+            "expected imported page title {title:?}, got {:?}",
+            created.title
+        );
+    }
+
+    // --- Phase 3.3: get_page confirms the BODY actually persisted ---
     let fetched = client
         .get_page(&slug_id)
         .await
@@ -154,8 +169,8 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
         .unwrap_or_default();
     eprintln!("[e2e] fetched page markdown after create:\n{rendered}\n");
 
+    // The body content (everything after the title heading) must be present.
     for needle in [
-        "# E2E Heading",
         "**bold**",
         "[link](https://docmost.com)",
         "- [ ] open task",
@@ -167,17 +182,15 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
             bail!("created page is missing expected content {needle:?}\n--- got ---\n{rendered}");
         }
     }
-    eprintln!("[e2e] create round-trip OK");
+    eprintln!("[e2e] create body persisted OK");
 
-    // --- Phase 3.4: update_page, then get_page with re-poll (async Yjs persistence) ---
-    let updated_title = "E2E Test Page (updated)";
-    let updated_markdown = "# Updated Heading\n\nThe body was replaced by the E2E test.\n";
-    let updated_content = markdown_to_prosemirror(updated_markdown);
+    // --- Phase 3.4: update_page TITLE (body update is not supported on Docmost <= 0.25.x) ---
+    let updated_title = "E2E Test Page (updated title)";
     client
-        .update_page(&page_id, Some(updated_title), Some(&updated_content))
+        .update_page(&page_id, Some(updated_title), None)
         .await
-        .context("update_page failed")?;
-    eprintln!("[e2e] update_page sent; polling get_page for persistence ...");
+        .context("update_page (title) failed")?;
+    eprintln!("[e2e] update_page title sent; polling get_page for persistence ...");
 
     let mut last_seen = String::new();
     let mut persisted = false;
@@ -194,8 +207,8 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
             .map(prosemirror_to_markdown)
             .unwrap_or_default();
         let title_ok = page.title.as_deref() == Some(updated_title);
-        let body_ok = last_seen.contains("# Updated Heading")
-            && last_seen.contains("The body was replaced by the E2E test.");
+        // The body must survive a title-only update unchanged.
+        let body_ok = last_seen.contains("**bold**") && last_seen.contains("| Col A | Col B |");
         eprintln!("[e2e] poll {attempt}/10: title_ok={title_ok} body_ok={body_ok}");
         if title_ok && body_ok {
             persisted = true;
@@ -205,14 +218,12 @@ async fn live_create_get_update_roundtrip() -> Result<()> {
 
     if !persisted {
         bail!(
-            "update did not persist within the poll window.\n\
-             This is the documented async-Yjs / Docmost-version caveat — verify the page in \
-             the UI and confirm your Docmost version supports the operation/format update path.\n\
+            "title update did not persist (or body was lost) within the poll window.\n\
              --- last seen markdown ---\n{last_seen}"
         );
     }
 
-    eprintln!("[e2e] update persisted and round-trips OK");
+    eprintln!("[e2e] title update persisted and body preserved OK");
     eprintln!(
         "[e2e] PASS. Created/updated page slug={slug_id} (id={page_id}) in space {space_id}. \
          No delete tool exists yet, so the page remains — remove it from the Docmost UI if desired."

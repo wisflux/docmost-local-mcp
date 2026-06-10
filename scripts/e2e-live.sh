@@ -21,12 +21,30 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Load .env.e2e if present (KEY=VALUE lines; '#' comments allowed).
+# Parsed literally (NOT `source`d) so values with shell metacharacters such as
+# ), (, @, $, spaces, etc. in a password are taken verbatim.
 if [[ -f .env.e2e ]]; then
   echo "[e2e] loading .env.e2e"
-  set -a
-  # shellcheck disable=SC1091
-  source .env.e2e
-  set +a
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Strip a trailing CR (CRLF files), skip blanks and comments.
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key//[[:space:]]/}"
+    [[ -z "$key" ]] && continue
+    # Trim surrounding whitespace from the value (common accidental trailing space).
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    # Honor one layer of surrounding quotes (use quotes if a value needs edge spaces).
+    if [[ ${#value} -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < .env.e2e
 fi
 
 missing=()

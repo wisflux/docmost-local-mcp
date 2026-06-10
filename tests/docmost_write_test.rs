@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{Json, Router, body::Bytes, extract::State, http::HeaderMap, routing::post};
 use docmost_local_mcp::{
     docmost_client::DocmostClient,
     prosemirror::markdown_to_prosemirror,
@@ -15,7 +15,9 @@ use tokio::net::TcpListener;
 
 #[derive(Clone, Default)]
 struct CapturedState {
-    bodies: Arc<Mutex<Vec<(String, Value)>>>,
+    json_bodies: Arc<Mutex<Vec<(String, Value)>>>,
+    /// (route, raw multipart body as UTF-8) for the import endpoint.
+    multipart_bodies: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 /// Spin up a mock Docmost that records request bodies and returns a page envelope.
@@ -29,6 +31,7 @@ async fn spawn(temp: &TempDir) -> Result<(DocmostClient, CapturedState, String)>
     let app = Router::new()
         .route("/api/pages/create", post(create_route))
         .route("/api/pages/update", post(update_route))
+        .route("/api/pages/import", post(import_route))
         .with_state(state.clone());
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
@@ -70,7 +73,7 @@ async fn spawn(temp: &TempDir) -> Result<(DocmostClient, CapturedState, String)>
 
 async fn create_route(State(state): State<CapturedState>, Json(body): Json<Value>) -> Json<Value> {
     state
-        .bodies
+        .json_bodies
         .lock()
         .unwrap()
         .push(("create".to_string(), body));
@@ -83,7 +86,7 @@ async fn create_route(State(state): State<CapturedState>, Json(body): Json<Value
 
 async fn update_route(State(state): State<CapturedState>, Json(body): Json<Value>) -> Json<Value> {
     state
-        .bodies
+        .json_bodies
         .lock()
         .unwrap()
         .push(("update".to_string(), body));
@@ -94,56 +97,141 @@ async fn update_route(State(state): State<CapturedState>, Json(body): Json<Value
     }))
 }
 
-fn last_body(state: &CapturedState, route: &str) -> Value {
+/// Captures the raw multipart body so tests can assert the spaceId field and the
+/// uploaded markdown file content.
+async fn import_route(
+    State(state): State<CapturedState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Json<Value> {
+    let content_type = headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.starts_with("multipart/form-data"),
+        "import must be multipart, got: {content_type}"
+    );
+    let raw = String::from_utf8_lossy(&body).to_string();
     state
-        .bodies
+        .multipart_bodies
+        .lock()
+        .unwrap()
+        .push(("import".to_string(), raw));
+    Json(json!({
+        "data": { "id": "imported-1", "slugId": "islug-1", "title": "Imported", "spaceId": "space-1" },
+        "success": true,
+        "status": 200
+    }))
+}
+
+fn last_json(state: &CapturedState, route: &str) -> Value {
+    state
+        .json_bodies
         .lock()
         .unwrap()
         .iter()
         .rev()
         .find(|(name, _)| name == route)
         .map(|(_, body)| body.clone())
-        .unwrap_or_else(|| panic!("no recorded {route} request"))
+        .unwrap_or_else(|| panic!("no recorded {route} JSON request"))
+}
+
+fn last_multipart(state: &CapturedState, route: &str) -> String {
+    state
+        .multipart_bodies
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|(name, _)| name == route)
+        .map(|(_, body)| body.clone())
+        .unwrap_or_else(|| panic!("no recorded {route} multipart request"))
 }
 
 #[tokio::test]
-async fn create_page_sends_content_object_and_parent() -> Result<()> {
+async fn create_page_with_body_uses_import_with_markdown_file() -> Result<()> {
     let temp = TempDir::new()?;
     let (client, state, _) = spawn(&temp).await?;
 
-    let content = markdown_to_prosemirror("# Hello\n\nbody");
     let page = client
-        .create_page("space-1", "My Page", Some(&content), Some("parent-1"))
+        .create_page("space-1", "My Page", Some("Hello **world**"), None)
         .await?;
-    assert_eq!(page.id.as_deref(), Some("page-1"));
-    assert_eq!(page.slug_id.as_deref(), Some("slug-1"));
+    // Response comes from the import endpoint.
+    assert_eq!(page.id.as_deref(), Some("imported-1"));
+    assert_eq!(page.slug_id.as_deref(), Some("islug-1"));
 
-    let body = last_body(&state, "create");
-    assert_eq!(body["spaceId"], json!("space-1"));
-    assert_eq!(body["title"], json!("My Page"));
-    assert_eq!(body["parentPageId"], json!("parent-1"));
-    // content must be an OBJECT (ProseMirror doc), never a stringified JSON.
-    assert!(body["content"].is_object());
-    assert_eq!(body["content"]["type"], json!("doc"));
+    let raw = last_multipart(&state, "import");
+    // spaceId text field is present.
+    assert!(
+        raw.contains("name=\"spaceId\"") && raw.contains("space-1"),
+        "missing spaceId field in:\n{raw}"
+    );
+    // A .md file part is uploaded.
+    assert!(
+        raw.contains("name=\"file\"") && raw.contains("filename=\"page.md\""),
+        "missing .md file part in:\n{raw}"
+    );
+    // The title is prepended as a level-1 heading so the importer uses it as the title.
+    assert!(
+        raw.contains("# My Page"),
+        "title heading missing in:\n{raw}"
+    );
+    // The body markdown is included verbatim (not pre-converted to ProseMirror JSON).
+    assert!(raw.contains("Hello **world**"), "body missing in:\n{raw}");
+    assert!(
+        !raw.contains("\"type\":\"doc\""),
+        "body must be raw markdown, not ProseMirror JSON, in:\n{raw}"
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn create_page_omits_optional_fields_when_absent() -> Result<()> {
+async fn create_page_title_only_uses_create_endpoint() -> Result<()> {
     let temp = TempDir::new()?;
     let (client, state, _) = spawn(&temp).await?;
 
+    // No body -> plain create endpoint, parent honored.
     client
-        .create_page("space-1", "Title only", None, None)
+        .create_page("space-1", "Title only", None, Some("parent-1"))
         .await?;
 
-    let body = last_body(&state, "create");
+    let body = last_json(&state, "create");
     assert_eq!(body["spaceId"], json!("space-1"));
     assert_eq!(body["title"], json!("Title only"));
-    assert!(body.get("content").is_none(), "content must be omitted");
+    assert_eq!(body["parentPageId"], json!("parent-1"));
     assert!(
-        body.get("parentPageId").is_none(),
-        "parentPageId must be omitted"
+        body.get("content").is_none(),
+        "title-only create must not send content"
+    );
+    // And it must NOT have hit the import endpoint.
+    assert!(
+        state
+            .multipart_bodies
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(name, _)| name != "import"),
+        "title-only create should not use import"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_page_blank_markdown_falls_back_to_title_only() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state, _) = spawn(&temp).await?;
+
+    // Whitespace-only markdown is treated as "no body".
+    client
+        .create_page("space-1", "Blanky", Some("   \n  "), None)
+        .await?;
+
+    let body = last_json(&state, "create");
+    assert_eq!(body["title"], json!("Blanky"));
+    assert!(
+        state.multipart_bodies.lock().unwrap().is_empty(),
+        "blank markdown should not trigger import"
     );
     Ok(())
 }
@@ -158,7 +246,7 @@ async fn update_page_sends_operation_and_format_with_content() -> Result<()> {
         .update_page("page-1", Some("New Title"), Some(&content))
         .await?;
 
-    let body = last_body(&state, "update");
+    let body = last_json(&state, "update");
     assert_eq!(body["pageId"], json!("page-1"));
     assert_eq!(body["title"], json!("New Title"));
     assert!(body["content"].is_object());
@@ -176,7 +264,7 @@ async fn update_page_title_only_omits_content_operation_format() -> Result<()> {
 
     client.update_page("page-1", Some("Renamed"), None).await?;
 
-    let body = last_body(&state, "update");
+    let body = last_json(&state, "update");
     assert_eq!(body["pageId"], json!("page-1"));
     assert_eq!(body["title"], json!("Renamed"));
     assert!(body.get("content").is_none());

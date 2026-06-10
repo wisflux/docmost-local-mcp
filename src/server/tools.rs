@@ -339,17 +339,15 @@ impl DocmostMcpServer {
         &self,
         Parameters(input): Parameters<CreatePageInput>,
     ) -> Result<String, ErrorData> {
-        let content = input
-            .markdown
-            .as_deref()
-            .filter(|markdown| !markdown.trim().is_empty())
-            .map(markdown_to_prosemirror);
+        // Markdown body is sent verbatim: the client routes it through Docmost's import
+        // endpoint, which converts Markdown -> ProseMirror server-side and persists the
+        // body (incl. the Yjs ydoc the editor reads from) on every Docmost version.
         let page = self
             .client
             .create_page(
                 &input.space_id,
                 &input.title,
-                content.as_ref(),
+                input.markdown.as_deref(),
                 input.parent_page_id.as_deref(),
             )
             .await

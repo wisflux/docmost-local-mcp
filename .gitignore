@@ -15,3 +15,6 @@ npm/launcher/bin
 # Local live-E2E credentials (never commit)
 .env.e2e
 .env
+
+# Playwright MCP browser session artifacts
+.playwright-mcp

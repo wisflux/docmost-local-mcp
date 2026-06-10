@@ -2,6 +2,12 @@
 
 Guidance for working in this repository.
 
+## Response style
+
+- **Explain simply.** Answer in plain, concise language. Avoid jargon where a plain word works; when a technical term is unavoidable, define it in one short clause.
+ 
+- **Lead with the diagram or a one-line summary**, then add brief supporting text — not a wall of prose.
+
 ## What this is
 
 `docmost-local-mcp` is a **Rust, read-only MCP server** that fronts a self-hosted [Docmost](https://docmost.com) instance for local IDE / AI tools (Cursor, Claude Desktop, etc.). It speaks MCP over **stdio** using [`rmcp`](https://docs.rs/rmcp) 0.6, authenticates to Docmost with email/password (storing the session locally), and exposes documentation as MCP tools. It is distributed as an `npx` package (`@wisflux/docmost-local-mcp`) whose Node launcher downloads the Rust binary from GitHub Releases.
@@ -45,7 +51,7 @@ Request path: **MCP client → `DocmostMcpServer` (`#[tool_router]`) → `Docmos
 
 ## Conventions & gotchas
 
-- **Mostly read; two write tools.** `create_page` and `update_page` are implemented (`read_only_hint = false`); other write tools (`duplicate_page`, `move_page`, `create_space`, …) remain on the README roadmap. Write specifics: Docmost expects page `content` as a ProseMirror JSON **object** verbatim (`format` defaults to `json` — never stringify it); on **update**, content is applied only when `content` + `operation` + `format` are all sent, so `update_page` always sends `operation:"replace"` + `format:"json"`, and the change routes through Docmost's Yjs collaborative editor (may persist asynchronously). Keep new tools read-only unless explicitly adding write support.
+- **Mostly read; two write tools.** `create_page` and `update_page` are implemented (`read_only_hint = false`); other write tools (`duplicate_page`, `move_page`, `create_space`, …) remain on the README roadmap. Write specifics (verified live against Docmost v0.25.3): the JSON `POST /api/pages/create`/`update` `content` field does **not** persist a page body on older servers — body content lives in the Yjs `ydoc` column, which only the import path and the collab websocket regenerate. So **`create_page` routes body content through `POST /api/pages/import`** (multipart: `spaceId` text field + a `file` part named `page.md`, body prefixed with `# {title}` so the importer uses it as the title). Import creates the page at the space root (no `parentPageId`), so `parent_page_id` is honored only for title-only pages (plain `/api/pages/create`). `update_page` sets the **title** on all versions; an existing page's **body** can't be set via REST on ≤0.25.x (websocket-only) — `update_page` still sends `content`+`operation:"replace"`+`format:"json"` for newer servers. Keep new tools read-only unless explicitly adding write support.
 - Tools return **human-readable Markdown**, not raw JSON. New tools should add a formatter in `render.rs` rather than dumping serde output.
 - Tool args are `schemars::JsonSchema` structs in `types.rs`, passed as `Parameters<T>`; required fields are non-`Option`, optional fields use `#[serde(default)] Option<T>`.
 - Auth is **lazy** — it triggers on the first authenticated tool call, not at startup. Never log tokens, passwords, or cookies to stdout.

@@ -216,8 +216,13 @@ Inputs:
 
 - `space_id`: required Docmost space ID (UUID) to create the page in
 - `title`: required page title
-- `markdown`: optional page body as Markdown (converted to ProseMirror before sending)
-- `parent_page_id`: optional parent page ID to nest under (must be in the same space)
+- `markdown`: optional page body as Markdown
+- `parent_page_id`: optional parent page ID to nest under (title-only pages only)
+
+When `markdown` is provided, the page body is sent through Docmost's **import** endpoint
+(`POST /api/pages/import`), which is the only mechanism that reliably persists page body
+content across Docmost versions (including older self-hosted servers). Pages created with
+a body land at the space root — `parent_page_id` is honored only for title-only pages.
 
 ### `update_page`
 
@@ -227,8 +232,10 @@ Inputs:
 - `title`: optional new title (omit to leave unchanged)
 - `markdown`: optional new body as Markdown; replaces the existing content (omit to leave unchanged)
 
-Content changes are applied through Docmost's collaborative editor, so an updated page's
-body may take a moment to fully persist after the call returns.
+Updating a page **title** works on all Docmost versions. Updating an existing page's
+**body** via REST works only on newer Docmost; on older self-hosted servers (e.g. v0.25.x)
+the body is edited solely through the collaborative editor and a REST body update is not
+applied. To set body content reliably there, create a new page with `create_page` instead.
 
 For the full design, Markdown→ProseMirror conversion details, verified Docmost API
 fields, and version caveats, see [docs/write-tools.md](docs/write-tools.md).
