@@ -1,12 +1,33 @@
 {
   "name": "@wisflux/docmost-local-mcp",
-  "version": "0.9.0",
-  "description": "Docmost MCP server for local IDE integrations",
+  "version": "0.9.1",
+  "description": "MCP server for self-hosted Docmost (Community Edition) — read & write your wiki from Claude, Cursor, and VS Code",
   "license": "MIT",
   "type": "module",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "docmost",
+    "wiki",
+    "self-hosted",
+    "claude",
+    "claude-desktop",
+    "cursor",
+    "vscode",
+    "ai",
+    "documentation",
+    "knowledge-base",
+    "notion-alternative",
+    "confluence-alternative",
+    "stdio"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/wisflux/docmost-local-mcp.git"
+  },
+  "homepage": "https://github.com/wisflux/docmost-local-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/wisflux/docmost-local-mcp/issues"
   },
   "bin": {
     "docmost-local-mcp": "./cli.js"

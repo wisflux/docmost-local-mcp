@@ -1,5 +1,9 @@
 # @wisflux/docmost-local-mcp
 
+[![npm version](https://img.shields.io/npm/v/@wisflux/docmost-local-mcp.svg)](https://www.npmjs.com/package/@wisflux/docmost-local-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@wisflux/docmost-local-mcp.svg)](https://www.npmjs.com/package/@wisflux/docmost-local-mcp)
+[![license](https://img.shields.io/npm/l/@wisflux/docmost-local-mcp.svg)](./LICENSE)
+
 MCP server for [Docmost](https://docmost.com/) that is built for self-hosted instances, especially deployments that do not have an enterprise license but still want reliable MCP access from local IDEs and AI tools.
 
 The package is launched with `npx`, while the actual server is a Rust binary downloaded from GitHub Releases during install. That binary handles stdio MCP traffic, local authentication UX, session storage, and Docmost API access.
@@ -107,7 +111,7 @@ DOCMOST_BASE_URL=https://docs.example.com npx -y @wisflux/docmost-local-mcp
 
 ## MCP Client Configuration
 
-Most MCP clients can launch the server directly with `npx`:
+Most MCP clients launch the server directly with `npx`. Add this to your client's MCP config, replacing the base URL with your own Docmost instance:
 
 ```json
 {
@@ -120,7 +124,41 @@ Most MCP clients can launch the server directly with `npx`:
 }
 ```
 
+Where that config lives, per client:
+
+- **Claude Desktop** — `claude_desktop_config.json` (Settings → Developer → Edit Config)
+- **Cursor** — `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project)
+- **Claude Code** — one command, no file editing:
+
+  ```bash
+  claude mcp add docmost -- npx -y @wisflux/docmost-local-mcp --base-url=https://docs.example.com
+  ```
+
+- **VS Code (GitHub Copilot)** — `.vscode/mcp.json`, using a top-level `servers` key instead of `mcpServers`:
+
+  ```json
+  {
+    "servers": {
+      "docmost": {
+        "command": "npx",
+        "args": ["-y", "@wisflux/docmost-local-mcp", "--base-url=https://docs.example.com"]
+      }
+    }
+  }
+  ```
+
 This setup works well when you want a fixed Docmost instance per client configuration. If `--base-url` or `DOCMOST_BASE_URL` is set, the login page shows that URL prefilled and locks the field. If no base URL is configured, the login flow asks for it during interactive sign-in.
+
+## Example Prompts
+
+Once connected, ask your AI client things like:
+
+- "Search the Engineering space in Docmost for our on-call runbook and summarize it."
+- "Create a new page in the Product space titled 'Q3 Planning' from these notes: …"
+- "Turn this meeting transcript into a structured Docmost page under the Team space."
+- "Find every page in Docmost that mentions the old API endpoint and list them."
+- "Read the 'Onboarding' page and draft a shorter checklist as a new sub-page."
+- "Add a comment on the release-notes page flagging the missing migration step."
 
 ## Authentication Flow
 
