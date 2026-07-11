@@ -180,7 +180,7 @@ pub struct CreateCommentInput {
     #[schemars(description = "The Docmost page ID (UUID) to comment on.")]
     pub page_id: String,
     #[schemars(
-        description = "Comment body as Markdown. Creates a page-level comment (not anchored to a text selection)."
+        description = "Comment body as Markdown. Creates a page-level comment (not anchored to a text selection). To tag a user, write a link with a `user:` URL: `[Display Name](user:USER_UUID)` (get USER_UUID from list_workspace_members); `[Title](page:PAGE_UUID)` mentions a page. Tables, images, and task lists are not supported inside comments."
     )]
     pub markdown: String,
 }
@@ -189,6 +189,8 @@ pub struct CreateCommentInput {
 pub struct UpdateCommentInput {
     #[schemars(description = "The comment ID (UUID) to update.")]
     pub comment_id: String,
-    #[schemars(description = "New comment body as Markdown; replaces the existing content.")]
+    #[schemars(
+        description = "New comment body as Markdown; replaces the existing content. Tag users with `[Display Name](user:USER_UUID)` (see list_workspace_members)."
+    )]
     pub markdown: String,
 }

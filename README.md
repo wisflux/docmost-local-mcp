@@ -70,6 +70,21 @@ servers work best-effort. The server detects the Docmost version (via
   suggests `create_page` (which persists bodies on every version via the import
   endpoint). Title updates work everywhere.
 
+## Content support
+
+Page and comment bodies are written in Markdown (headings, bold/italic/strike,
+inline code, links, lists, task lists, blockquotes, code blocks; pages also
+support tables and external-URL images). Comments support a smaller set — no
+tables, task lists, or images.
+
+**Mentions (@tagging):** in any Markdown body, a link with a `user:` or `page:`
+URL becomes a mention — `[Display Name](user:USER_UUID)` tags a user (find the
+UUID with `list_workspace_members`) and `[Page Title](page:PAGE_UUID)` links a
+page. Tagged users are notified by Docmost.
+
+Attaching uploaded files/images (as opposed to referencing an image URL) is not
+supported.
+
 ## Requirements
 
 - Node.js 18 or newer for `npx`

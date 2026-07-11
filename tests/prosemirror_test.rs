@@ -668,3 +668,132 @@ fn markdown_round_trips_ordered_start_blockquote_and_strike() {
         );
     }
 }
+
+// --- @mentions ---
+
+fn all_nodes_of<'a>(value: &'a Value, node_type: &str, out: &mut Vec<&'a Value>) {
+    if value.get("type").and_then(Value::as_str) == Some(node_type) {
+        out.push(value);
+    }
+    if let Some(children) = value.get("content").and_then(Value::as_array) {
+        for child in children {
+            all_nodes_of(child, node_type, out);
+        }
+    }
+}
+
+#[test]
+fn markdown_to_prosemirror_user_mention() {
+    let doc = markdown_to_prosemirror("Hey [Jane Doe](user:019c-jane) welcome!");
+    let mention = find_node(&doc, "mention").expect("mention node");
+    let attrs = mention.get("attrs").expect("mention attrs");
+    assert_eq!(
+        attrs.get("entityType").and_then(Value::as_str),
+        Some("user")
+    );
+    assert_eq!(
+        attrs.get("entityId").and_then(Value::as_str),
+        Some("019c-jane")
+    );
+    assert_eq!(attrs.get("label").and_then(Value::as_str), Some("Jane Doe"));
+    // A unique id is required (Docmost dedups mentions by it).
+    assert!(
+        attrs
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+    );
+    // The mention is inline in the paragraph, alongside the surrounding text.
+    let paragraph = find_node(&doc, "paragraph").unwrap();
+    let joined: String = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(|n| n.get("text").and_then(Value::as_str))
+        .collect();
+    assert!(joined.contains("Hey ") && joined.contains(" welcome!"));
+}
+
+#[test]
+fn markdown_to_prosemirror_page_mention() {
+    let doc = markdown_to_prosemirror("see [Roadmap](page:019c-page)");
+    let mention = find_node(&doc, "mention").expect("mention node");
+    let attrs = mention.get("attrs").unwrap();
+    assert_eq!(
+        attrs.get("entityType").and_then(Value::as_str),
+        Some("page")
+    );
+    assert_eq!(
+        attrs.get("entityId").and_then(Value::as_str),
+        Some("019c-page")
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_multiple_mentions_get_unique_ids() {
+    let doc = markdown_to_prosemirror("[A](user:u1) and [B](user:u2)");
+    let mut mentions = Vec::new();
+    all_nodes_of(&doc, "mention", &mut mentions);
+    assert_eq!(mentions.len(), 2, "both mentions must be produced");
+    let id0 = mentions[0].get("attrs").unwrap().get("id").unwrap();
+    let id1 = mentions[1].get("attrs").unwrap().get("id").unwrap();
+    assert_ne!(
+        id0, id1,
+        "each mention needs a distinct id (Docmost dedups by id)"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_ordinary_link_is_not_a_mention() {
+    let doc = markdown_to_prosemirror("[site](https://example.com)");
+    assert!(
+        find_node(&doc, "mention").is_none(),
+        "http link is not a mention"
+    );
+    // It is a normal link mark instead.
+    let paragraph = find_node(&doc, "paragraph").unwrap();
+    let has_link = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .any(|n| mark_types(n).contains(&"link".to_string()));
+    assert!(has_link, "expected a link mark");
+}
+
+#[test]
+fn mention_round_trips_through_markdown() {
+    // mention -> markdown (reader) -> mention (writer), entityId preserved.
+    let doc = markdown_to_prosemirror("ping [Jane](user:uid-1)");
+    let back = markdown_to_prosemirror(&prosemirror_to_markdown(&doc));
+    let mention = find_node(&back, "mention").expect("mention survives round-trip");
+    assert_eq!(
+        mention
+            .get("attrs")
+            .and_then(|a| a.get("entityId"))
+            .and_then(Value::as_str),
+        Some("uid-1")
+    );
+}
+
+#[test]
+fn comment_supported_elements_convert() {
+    // The element subset Docmost comments support (StarterKit + link + mention): headings,
+    // marks, inline code, lists, blockquote, code block, and mentions.
+    let md = "## Heading\n\nSome **bold** *italic* `code` and [Jane](user:u9).\n\n- one\n- two\n\n> quote\n\n```rs\nlet x = 1;\n```";
+    let doc = markdown_to_prosemirror(md);
+    for node_type in [
+        "heading",
+        "paragraph",
+        "bulletList",
+        "blockquote",
+        "codeBlock",
+        "mention",
+    ] {
+        assert!(
+            find_node(&doc, node_type).is_some(),
+            "comment should support {node_type}"
+        );
+    }
+}
