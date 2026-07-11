@@ -49,6 +49,8 @@ async fn server_lists_expected_tools() -> Result<()> {
         "copy_page_to_space",
         "move_page",
         "move_page_to_space",
+        "create_space",
+        "update_space",
     ] {
         assert!(
             tool_names.iter().any(|name| name == expected),
@@ -158,6 +160,9 @@ async fn server_required_input_fields_are_present() -> Result<()> {
         ("move_page", "page_id"),
         ("move_page_to_space", "page_id"),
         ("move_page_to_space", "space_id"),
+        ("create_space", "name"),
+        ("create_space", "slug"),
+        ("update_space", "space_id"),
     ] {
         let tool = tools
             .tools

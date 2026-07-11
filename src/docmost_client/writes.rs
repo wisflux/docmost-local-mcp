@@ -5,7 +5,7 @@ use super::{CursorListResult, normalize_cursor_list_result};
 use crate::{
     debug::debug_log,
     position::generate_jittered_key_between,
-    types::{DocmostPage, DocmostPageListItem},
+    types::{DocmostPage, DocmostPageListItem, DocmostSpace},
 };
 
 /// Write operations (page create/update + structural moves). Split from the read
@@ -209,5 +209,44 @@ impl super::DocmostClient {
             .filter(|p| Some(p.id.as_str()) != exclude_id)
             .filter_map(|p| p.position)
             .max())
+    }
+
+    /// Create a new space (`name` + URL `slug`, optional `description`). Returns the
+    /// created space. Requires workspace "manage spaces" permission.
+    pub async fn create_space(
+        &self,
+        name: &str,
+        slug: &str,
+        description: Option<&str>,
+    ) -> Result<DocmostSpace> {
+        let mut payload = serde_json::json!({ "name": name, "slug": slug });
+        if let Some(description) = description {
+            payload["description"] = Value::String(description.to_string());
+        }
+        self.request::<DocmostSpace>("/api/spaces/create", payload, true)
+            .await
+    }
+
+    /// Update a space's `name`, `slug`, and/or `description` (each optional; omitted
+    /// fields are left unchanged). Requires space "manage settings" permission.
+    pub async fn update_space(
+        &self,
+        space_id: &str,
+        name: Option<&str>,
+        slug: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<DocmostSpace> {
+        let mut payload = serde_json::json!({ "spaceId": space_id });
+        if let Some(name) = name {
+            payload["name"] = Value::String(name.to_string());
+        }
+        if let Some(slug) = slug {
+            payload["slug"] = Value::String(slug.to_string());
+        }
+        if let Some(description) = description {
+            payload["description"] = Value::String(description.to_string());
+        }
+        self.request::<DocmostSpace>("/api/spaces/update", payload, true)
+            .await
     }
 }

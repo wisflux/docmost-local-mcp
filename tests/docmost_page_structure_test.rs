@@ -38,6 +38,8 @@ async fn spawn(temp: &TempDir) -> Result<(DocmostClient, Captured)> {
         .route("/api/pages/duplicate", post(duplicate_route))
         .route("/api/pages/move", post(move_route))
         .route("/api/pages/move-to-space", post(move_to_space_route))
+        .route("/api/spaces/create", post(create_space_route))
+        .route("/api/spaces/update", post(update_space_route))
         .with_state(state.clone());
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
@@ -121,6 +123,22 @@ async fn move_to_space_route(
     record(&state, "move-to-space", body);
     // Docmost returns no data payload here — the client must tolerate that.
     Json(json!({ "success": true, "status": 200 }))
+}
+
+async fn create_space_route(State(state): State<Captured>, Json(body): Json<Value>) -> Json<Value> {
+    record(&state, "space-create", body);
+    Json(json!({
+        "data": { "id": "space-new", "name": "New Space", "slug": "new-space" },
+        "success": true, "status": 200
+    }))
+}
+
+async fn update_space_route(State(state): State<Captured>, Json(body): Json<Value>) -> Json<Value> {
+    record(&state, "space-update", body);
+    Json(json!({
+        "data": { "id": "space-1", "name": "Renamed", "slug": "renamed" },
+        "success": true, "status": 200
+    }))
 }
 
 fn last(state: &Captured, route: &str) -> Value {
@@ -247,5 +265,53 @@ async fn move_page_with_no_siblings_uses_start_position() -> Result<()> {
         "expected start key, got {position}"
     );
     assert!((5..=12).contains(&position.len()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_space_sends_name_slug_and_description() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    let space = client
+        .create_space("New Space", "new-space", Some("A description"))
+        .await?;
+    assert_eq!(space.id, "space-new");
+
+    let body = last(&state, "space-create");
+    assert_eq!(body["name"], json!("New Space"));
+    assert_eq!(body["slug"], json!("new-space"));
+    assert_eq!(body["description"], json!("A description"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_space_without_description_omits_it() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    client.create_space("Docs", "docs", None).await?;
+
+    let body = last(&state, "space-create");
+    assert_eq!(body["slug"], json!("docs"));
+    assert!(body.get("description").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_space_sends_only_provided_fields() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    // Only the name changes; slug and description are left untouched.
+    client
+        .update_space("space-1", Some("Renamed"), None, None)
+        .await?;
+
+    let body = last(&state, "space-update");
+    assert_eq!(body["spaceId"], json!("space-1"));
+    assert_eq!(body["name"], json!("Renamed"));
+    assert!(body.get("slug").is_none());
+    assert!(body.get("description").is_none());
     Ok(())
 }

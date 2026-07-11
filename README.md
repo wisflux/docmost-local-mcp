@@ -46,6 +46,8 @@ If you run your own Docmost and want it available inside Cursor, Claude Desktop,
 - `copy_page_to_space`: copy a page (and its sub-pages) into a different space
 - `move_page`: move a page under a new parent page, or to the space root
 - `move_page_to_space`: move a page (and its sub-pages) to a different space
+- `create_space`: create a new space with a name and URL slug
+- `update_space`: update a space's name, slug, and/or description
 
 ## Roadmap
 
@@ -55,8 +57,6 @@ Planned write tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `create_space` | Create a new space |
-| `update_space` | Update a space's name or description |
 | `create_comment` | Add a comment to a page |
 | `update_comment` | Update an existing comment |
 

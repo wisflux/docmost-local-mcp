@@ -1,4 +1,5 @@
-//! Page-structure write tools (duplicate, copy-to-space, move, move-to-space).
+//! Structural write tools: page organization (duplicate, copy-to-space, move,
+//! move-to-space) and space management (create/update space).
 //!
 //! These live in their own `#[tool_router]` impl (a named `write_tool_router`, merged
 //! into the server's router in `new()`) to keep each tools file within the size limit.
@@ -8,7 +9,8 @@ use rmcp::{handler::server::wrapper::Parameters, model::ErrorData, tool, tool_ro
 use crate::{
     server::{DocmostMcpServer, internal_error, render::format_optional_id},
     types::{
-        CopyPageToSpaceInput, DocmostPage, DuplicatePageInput, MovePageInput, MovePageToSpaceInput,
+        CopyPageToSpaceInput, CreateSpaceInput, DocmostPage, DocmostSpace, DuplicatePageInput,
+        MovePageInput, MovePageToSpaceInput, UpdateSpaceInput,
     },
 };
 
@@ -115,6 +117,68 @@ impl DocmostMcpServer {
             &input.page_id,
         ))
     }
+
+    #[tool(
+        name = "create_space",
+        description = "Create a new Docmost space with a name and URL slug.",
+        annotations(
+            title = "Create Docmost Space",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn create_space(
+        &self,
+        Parameters(input): Parameters<CreateSpaceInput>,
+    ) -> Result<String, ErrorData> {
+        let space = self
+            .client
+            .create_space(&input.name, &input.slug, input.description.as_deref())
+            .await
+            .map_err(internal_error)?;
+        Ok(format_space(&space, "Created"))
+    }
+
+    #[tool(
+        name = "update_space",
+        description = "Update a Docmost space's name, slug, and/or description.",
+        annotations(
+            title = "Update Docmost Space",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn update_space(
+        &self,
+        Parameters(input): Parameters<UpdateSpaceInput>,
+    ) -> Result<String, ErrorData> {
+        let space = self
+            .client
+            .update_space(
+                &input.space_id,
+                input.name.as_deref(),
+                input.slug.as_deref(),
+                input.description.as_deref(),
+            )
+            .await
+            .map_err(internal_error)?;
+        Ok(format_space(&space, "Updated"))
+    }
+}
+
+fn format_space(space: &DocmostSpace, verb: &str) -> String {
+    let name = space.name.as_deref().unwrap_or(&space.slug);
+    [
+        format!("{verb} Docmost space \"{name}\"."),
+        String::new(),
+        format!("Space ID: {}", format_optional_id(Some(&space.id))),
+        format!("Slug: `{}`", space.slug),
+    ]
+    .join("\n")
 }
 
 fn format_duplicated_page(page: &DocmostPage, into_space: Option<&str>) -> String {
