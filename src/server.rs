@@ -9,6 +9,7 @@ use crate::docmost_client::DocmostClient;
 
 mod render;
 mod tools;
+mod tools_page_write;
 mod tools_write;
 
 #[derive(Debug, Clone)]

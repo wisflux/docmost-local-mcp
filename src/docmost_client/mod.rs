@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result, anyhow};
 use reqwest::{Client, Response};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use tokio::sync::OnceCell;
 
 use crate::{
     auth::manager::{AuthManager, safe_read_response_text},
@@ -10,12 +13,15 @@ use crate::{
         DocmostComment, DocmostCurrentUserResponse, DocmostPage, DocmostPageListItem,
         DocmostSearchResult, DocmostSpace, DocmostSpaceWithMembership, DocmostUser,
     },
+    version::{Capabilities, ServerVersion, VersionResponse},
 };
 
 #[derive(Debug, Clone)]
 pub struct DocmostClient {
     auth_manager: AuthManager,
     http: Client,
+    /// Detected server version, fetched once and shared across clones.
+    version: Arc<OnceCell<Option<ServerVersion>>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -43,7 +49,40 @@ impl DocmostClient {
         Self {
             auth_manager,
             http: Client::new(),
+            version: Arc::new(OnceCell::new()),
         }
+    }
+
+    /// The detected Docmost server version (from `POST /api/version`), fetched once and
+    /// cached. `None` if the endpoint is unavailable (e.g. Docmost Cloud) or unparseable.
+    pub async fn server_version(&self) -> Option<ServerVersion> {
+        *self
+            .version
+            .get_or_init(|| async {
+                match self
+                    .request::<VersionResponse>("/api/version", serde_json::json!({}), true)
+                    .await
+                {
+                    Ok(response) => response
+                        .current_version
+                        .as_deref()
+                        .and_then(ServerVersion::parse),
+                    Err(error) => {
+                        debug_log(
+                            "version",
+                            "Could not determine Docmost server version",
+                            Some(&serde_json::json!({ "error": error.to_string() })),
+                        );
+                        None
+                    }
+                }
+            })
+            .await
+    }
+
+    /// Version-gated server capabilities (see [`crate::version::Capabilities`]).
+    pub async fn capabilities(&self) -> Capabilities {
+        Capabilities::for_version(self.server_version().await)
     }
 
     pub async fn list_spaces(&self) -> Result<Vec<DocmostSpace>> {

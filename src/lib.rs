@@ -7,3 +7,4 @@ pub mod server;
 pub mod startup_config;
 pub mod storage;
 pub mod types;
+pub mod version;

@@ -224,16 +224,20 @@ pub fn format_created_page(page: &DocmostPage, requested_title: &str) -> String 
     lines.join("\n")
 }
 
-pub fn format_updated_page(page: &DocmostPage) -> String {
+/// Format the update confirmation. `body_note` carries an optional caveat about the body
+/// update (e.g. "not applied on this server version"); it is appended only when present,
+/// so a title-only update or a fully-applied body update has no misleading note.
+pub fn format_updated_page(page: &DocmostPage, body_note: Option<&str>) -> String {
     let title = page.title.as_deref().unwrap_or("Untitled");
-    let lines = [
+    let mut lines = vec![
         format!("Updated Docmost page \"{title}\"."),
         String::new(),
         format!("Page ID: {}", format_optional_id(page.id.as_deref())),
         format!("Slug ID: {}", format_optional_id(page.slug_id.as_deref())),
-        "Note: content changes are applied via the collaborative editor and may take a moment to fully persist."
-            .to_string(),
     ];
+    if let Some(note) = body_note {
+        lines.push(note.to_string());
+    }
     lines.join("\n")
 }
 
@@ -288,25 +292,36 @@ mod tests {
     }
 
     #[test]
-    fn format_updated_page_reports_title_and_collaborative_note() {
-        let output = format_updated_page(&page(json!({
-            "id": "p1",
-            "slugId": "s1",
-            "title": "Renamed"
-        })));
+    fn format_updated_page_has_no_caveat_when_body_note_absent() {
+        // A title-only update (or a fully-applied body update) must NOT carry a spurious
+        // "collaborative editor" note.
+        let output = format_updated_page(
+            &page(json!({ "id": "p1", "slugId": "s1", "title": "Renamed" })),
+            None,
+        );
         assert!(output.contains("Updated Docmost page \"Renamed\"."));
         assert!(output.contains("Page ID: `p1`"));
-        // Documents current behavior: the collaborative-editor note is always present,
-        // including for title-only updates where no body was sent.
         assert!(
-            output.contains("applied via the collaborative editor"),
+            !output.to_lowercase().contains("collaborative editor"),
+            "no caveat expected, got: {output}"
+        );
+    }
+
+    #[test]
+    fn format_updated_page_appends_body_note_when_present() {
+        let output = format_updated_page(
+            &page(json!({ "id": "p1", "title": "Renamed" })),
+            Some("Note: the body was NOT changed on this server version."),
+        );
+        assert!(
+            output.contains("the body was NOT changed"),
             "output: {output}"
         );
     }
 
     #[test]
     fn format_updated_page_falls_back_to_untitled() {
-        let output = format_updated_page(&page(json!({ "id": "p1" })));
+        let output = format_updated_page(&page(json!({ "id": "p1" })), None);
         assert!(
             output.contains("Updated Docmost page \"Untitled\"."),
             "output: {output}"

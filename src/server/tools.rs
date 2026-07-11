@@ -2,18 +2,18 @@ use rmcp::{handler::server::wrapper::Parameters, model::ErrorData, tool, tool_ro
 
 use crate::{
     auth::manager::AuthManager,
-    prosemirror::{markdown_to_prosemirror, prosemirror_to_markdown},
+    prosemirror::prosemirror_to_markdown,
     server::{
         DocmostMcpServer, internal_error,
         render::{
-            format_comments, format_created_page, format_current_user, format_page_list,
-            format_search_results, format_updated_page, format_workspace_members,
+            format_comments, format_current_user, format_page_list, format_search_results,
+            format_workspace_members,
         },
     },
     types::{
-        CreatePageInput, DocmostSearchResult, EmptyInput, GetCommentsInput, GetPageInput,
-        GetSpaceInput, ListChildPagesInput, ListPagesInput, ListWorkspaceMembersInput,
-        SearchDocsInput, StartupConfig, UpdatePageInput,
+        DocmostSearchResult, EmptyInput, GetCommentsInput, GetPageInput, GetSpaceInput,
+        ListChildPagesInput, ListPagesInput, ListWorkspaceMembersInput, SearchDocsInput,
+        StartupConfig,
     },
 };
 
@@ -23,7 +23,9 @@ impl DocmostMcpServer {
         let client = crate::docmost_client::DocmostClient::new(auth_manager);
         Ok(Self {
             client,
-            tool_router: Self::tool_router() + Self::write_tool_router(),
+            tool_router: Self::tool_router()
+                + Self::page_write_tool_router()
+                + Self::write_tool_router(),
         })
     }
 
@@ -322,64 +324,5 @@ impl DocmostMcpServer {
             .map_err(internal_error)?;
 
         Ok(format_current_user(&response))
-    }
-
-    #[tool(
-        name = "create_page",
-        description = "Create a new Docmost page in a space from Markdown content.",
-        annotations(
-            title = "Create Docmost Page",
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = false,
-            open_world_hint = true
-        )
-    )]
-    async fn create_page(
-        &self,
-        Parameters(input): Parameters<CreatePageInput>,
-    ) -> Result<String, ErrorData> {
-        // Markdown body is sent verbatim: the client routes it through Docmost's import
-        // endpoint, which converts Markdown -> ProseMirror server-side and persists the
-        // body (incl. the Yjs ydoc the editor reads from) on every Docmost version.
-        let page = self
-            .client
-            .create_page(
-                &input.space_id,
-                &input.title,
-                input.markdown.as_deref(),
-                input.parent_page_id.as_deref(),
-            )
-            .await
-            .map_err(internal_error)?;
-        Ok(format_created_page(&page, &input.title))
-    }
-
-    #[tool(
-        name = "update_page",
-        description = "Update an existing Docmost page's title and/or Markdown content.",
-        annotations(
-            title = "Update Docmost Page",
-            read_only_hint = false,
-            destructive_hint = true,
-            idempotent_hint = false,
-            open_world_hint = true
-        )
-    )]
-    async fn update_page(
-        &self,
-        Parameters(input): Parameters<UpdatePageInput>,
-    ) -> Result<String, ErrorData> {
-        let content = input
-            .markdown
-            .as_deref()
-            .filter(|markdown| !markdown.trim().is_empty())
-            .map(markdown_to_prosemirror);
-        let page = self
-            .client
-            .update_page(&input.page_id, input.title.as_deref(), content.as_ref())
-            .await
-            .map_err(internal_error)?;
-        Ok(format_updated_page(&page))
     }
 }

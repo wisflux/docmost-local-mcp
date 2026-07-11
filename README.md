@@ -58,6 +58,18 @@ page-level comments; comments anchored to a specific text selection (inline
 comments) require the collaborative editor's cursor positions and are out of
 scope for this REST-based server.
 
+## Compatibility
+
+Targets Docmost from roughly the last year of releases (**v0.22+**); older
+servers work best-effort. The server detects the Docmost version (via
+`POST /api/version`) once per session and adapts where behaviour differs:
+
+- **Page body edits:** `update_page` can only change an existing page's **body**
+  on Docmost **v0.70.0+**. On older servers the body lives in the collaborative
+  editor and a REST body update is ignored — `update_page` says so explicitly and
+  suggests `create_page` (which persists bodies on every version via the import
+  endpoint). Title updates work everywhere.
+
 ## Requirements
 
 - Node.js 18 or newer for `npx`
