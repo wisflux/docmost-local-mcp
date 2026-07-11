@@ -1,0 +1,18 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["mecp"],
+  "name": "docmost-local-mcp",
+  "description": "MCP server for self-hosted Docmost (Community Edition) — read & write spaces, pages, and comments from Claude, Cursor, and VS Code. Works on the free Community Edition.",
+  "keywords": [
+    "mcp",
+    "docmost",
+    "self-hosted",
+    "wiki",
+    "documentation",
+    "knowledge-base",
+    "claude",
+    "cursor",
+    "notion-alternative",
+    "confluence-alternative"
+  ]
+}

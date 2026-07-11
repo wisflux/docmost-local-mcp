@@ -1,0 +1,9 @@
+# Keep the Docker build context small and reproducible.
+target/
+.git/
+node_modules/
+npm/launcher/bin/
+*.md
+.github/
+tests/
+docs/
