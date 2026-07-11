@@ -5,7 +5,7 @@ use super::{CursorListResult, normalize_cursor_list_result};
 use crate::{
     debug::debug_log,
     position::generate_jittered_key_between,
-    types::{DocmostPage, DocmostPageListItem, DocmostSpace},
+    types::{DocmostComment, DocmostPage, DocmostPageListItem, DocmostSpace},
 };
 
 /// Write operations (page create/update + structural moves). Split from the read
@@ -247,6 +247,32 @@ impl super::DocmostClient {
             payload["description"] = Value::String(description.to_string());
         }
         self.request::<DocmostSpace>("/api/spaces/update", payload, true)
+            .await
+    }
+
+    /// Add a page-level comment. Docmost stores the comment body as ProseMirror JSON but
+    /// the `content` field is validated as a JSON *string*, so the document is serialized
+    /// before sending (the server `JSON.parse`s it back). `type` defaults to `page`.
+    pub async fn create_comment(&self, page_id: &str, content: &Value) -> Result<DocmostComment> {
+        let payload = serde_json::json!({
+            "pageId": page_id,
+            "content": serde_json::to_string(content).context("Failed to serialize comment content")?,
+        });
+        self.request::<DocmostComment>("/api/comments/create", payload, true)
+            .await
+    }
+
+    /// Replace an existing comment's body. Same stringified-`content` contract as create.
+    pub async fn update_comment(
+        &self,
+        comment_id: &str,
+        content: &Value,
+    ) -> Result<DocmostComment> {
+        let payload = serde_json::json!({
+            "commentId": comment_id,
+            "content": serde_json::to_string(content).context("Failed to serialize comment content")?,
+        });
+        self.request::<DocmostComment>("/api/comments/update", payload, true)
             .await
     }
 }

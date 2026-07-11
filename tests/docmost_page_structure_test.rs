@@ -40,6 +40,8 @@ async fn spawn(temp: &TempDir) -> Result<(DocmostClient, Captured)> {
         .route("/api/pages/move-to-space", post(move_to_space_route))
         .route("/api/spaces/create", post(create_space_route))
         .route("/api/spaces/update", post(update_space_route))
+        .route("/api/comments/create", post(comment_create_route))
+        .route("/api/comments/update", post(comment_update_route))
         .with_state(state.clone());
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
@@ -137,6 +139,28 @@ async fn update_space_route(State(state): State<Captured>, Json(body): Json<Valu
     record(&state, "space-update", body);
     Json(json!({
         "data": { "id": "space-1", "name": "Renamed", "slug": "renamed" },
+        "success": true, "status": 200
+    }))
+}
+
+async fn comment_create_route(
+    State(state): State<Captured>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    record(&state, "comment-create", body);
+    Json(json!({
+        "data": { "id": "comment-1", "pageId": "page-1", "creator": { "id": "u1", "name": "Jane" } },
+        "success": true, "status": 200
+    }))
+}
+
+async fn comment_update_route(
+    State(state): State<Captured>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    record(&state, "comment-update", body);
+    Json(json!({
+        "data": { "id": "comment-1", "pageId": "page-1", "creator": { "id": "u1", "name": "Jane" } },
         "success": true, "status": 200
     }))
 }
@@ -313,5 +337,46 @@ async fn update_space_sends_only_provided_fields() -> Result<()> {
     assert_eq!(body["name"], json!("Renamed"));
     assert!(body.get("slug").is_none());
     assert!(body.get("description").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_comment_sends_content_as_json_string() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    let content = docmost_local_mcp::prosemirror::markdown_to_prosemirror("Nice **work**");
+    let comment = client.create_comment("page-1", &content).await?;
+    assert_eq!(comment.id, "comment-1");
+
+    let body = last(&state, "comment-create");
+    assert_eq!(body["pageId"], json!("page-1"));
+    // The critical contract: Docmost validates `content` as a JSON *string*
+    // (it JSON.parses it), so the client must serialize the doc, not send an object.
+    let content_field = &body["content"];
+    assert!(
+        content_field.is_string(),
+        "content must be a JSON string, got: {content_field}"
+    );
+    let parsed: Value = serde_json::from_str(content_field.as_str().unwrap())?;
+    assert_eq!(parsed["type"], json!("doc"));
+    // type is omitted so the server defaults it to a page-level comment.
+    assert!(body.get("type").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_comment_sends_comment_id_and_stringified_content() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    let content = docmost_local_mcp::prosemirror::markdown_to_prosemirror("Edited");
+    client.update_comment("comment-1", &content).await?;
+
+    let body = last(&state, "comment-update");
+    assert_eq!(body["commentId"], json!("comment-1"));
+    assert!(body["content"].is_string());
+    let parsed: Value = serde_json::from_str(body["content"].as_str().unwrap())?;
+    assert_eq!(parsed["type"], json!("doc"));
     Ok(())
 }

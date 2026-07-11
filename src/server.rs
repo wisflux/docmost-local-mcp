@@ -22,7 +22,7 @@ impl ServerHandler for DocmostMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Docmost MCP server for listing spaces, searching docs, and fetching pages, plus creating and updating pages from Markdown, organizing pages (duplicate, move, and copy or move between spaces), and creating or updating spaces."
+                "Docmost MCP server for listing spaces, searching docs, and fetching pages, plus creating and updating pages from Markdown, organizing pages (duplicate, move, and copy or move between spaces), creating or updating spaces, and adding or updating page comments."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

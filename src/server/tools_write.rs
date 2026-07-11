@@ -1,5 +1,6 @@
-//! Structural write tools: page organization (duplicate, copy-to-space, move,
-//! move-to-space) and space management (create/update space).
+//! Structural and content write tools: page organization (duplicate, copy-to-space,
+//! move, move-to-space), space management (create/update space), and comments
+//! (create/update).
 //!
 //! These live in their own `#[tool_router]` impl (a named `write_tool_router`, merged
 //! into the server's router in `new()`) to keep each tools file within the size limit.
@@ -7,10 +8,12 @@
 use rmcp::{handler::server::wrapper::Parameters, model::ErrorData, tool, tool_router};
 
 use crate::{
+    prosemirror::markdown_to_prosemirror,
     server::{DocmostMcpServer, internal_error, render::format_optional_id},
     types::{
-        CopyPageToSpaceInput, CreateSpaceInput, DocmostPage, DocmostSpace, DuplicatePageInput,
-        MovePageInput, MovePageToSpaceInput, UpdateSpaceInput,
+        CopyPageToSpaceInput, CreateCommentInput, CreateSpaceInput, DocmostComment, DocmostPage,
+        DocmostSpace, DuplicatePageInput, MovePageInput, MovePageToSpaceInput, UpdateCommentInput,
+        UpdateSpaceInput,
     },
 };
 
@@ -168,6 +171,72 @@ impl DocmostMcpServer {
             .map_err(internal_error)?;
         Ok(format_space(&space, "Updated"))
     }
+
+    #[tool(
+        name = "create_comment",
+        description = "Add a page-level comment to a Docmost page, written in Markdown.",
+        annotations(
+            title = "Create Docmost Comment",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn create_comment(
+        &self,
+        Parameters(input): Parameters<CreateCommentInput>,
+    ) -> Result<String, ErrorData> {
+        let content = markdown_to_prosemirror(&input.markdown);
+        let comment = self
+            .client
+            .create_comment(&input.page_id, &content)
+            .await
+            .map_err(internal_error)?;
+        Ok(format_comment(&comment, "Added"))
+    }
+
+    #[tool(
+        name = "update_comment",
+        description = "Replace an existing Docmost comment's body with new Markdown content.",
+        annotations(
+            title = "Update Docmost Comment",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn update_comment(
+        &self,
+        Parameters(input): Parameters<UpdateCommentInput>,
+    ) -> Result<String, ErrorData> {
+        let content = markdown_to_prosemirror(&input.markdown);
+        let comment = self
+            .client
+            .update_comment(&input.comment_id, &content)
+            .await
+            .map_err(internal_error)?;
+        Ok(format_comment(&comment, "Updated"))
+    }
+}
+
+fn format_comment(comment: &DocmostComment, verb: &str) -> String {
+    let author = comment
+        .creator
+        .as_ref()
+        .and_then(|c| c.name.as_deref())
+        .unwrap_or("you");
+    [
+        format!("{verb} Docmost comment as {author}."),
+        String::new(),
+        format!("Comment ID: {}", format_optional_id(Some(&comment.id))),
+        format!(
+            "Page ID: {}",
+            format_optional_id(comment.page_id.as_deref())
+        ),
+    ]
+    .join("\n")
 }
 
 fn format_space(space: &DocmostSpace, verb: &str) -> String {

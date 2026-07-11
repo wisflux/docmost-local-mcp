@@ -174,3 +174,21 @@ pub struct UpdateSpaceInput {
     #[schemars(description = "Optional new description. Omit to leave unchanged.")]
     pub description: Option<String>,
 }
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CreateCommentInput {
+    #[schemars(description = "The Docmost page ID (UUID) to comment on.")]
+    pub page_id: String,
+    #[schemars(
+        description = "Comment body as Markdown. Creates a page-level comment (not anchored to a text selection)."
+    )]
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct UpdateCommentInput {
+    #[schemars(description = "The comment ID (UUID) to update.")]
+    pub comment_id: String,
+    #[schemars(description = "New comment body as Markdown; replaces the existing content.")]
+    pub markdown: String,
+}

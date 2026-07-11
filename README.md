@@ -48,17 +48,15 @@ If you run your own Docmost and want it available inside Cursor, Claude Desktop,
 - `move_page_to_space`: move a page (and its sub-pages) to a different space
 - `create_space`: create a new space with a name and URL slug
 - `update_space`: update a space's name, slug, and/or description
+- `create_comment`: add a page-level comment to a page from Markdown
+- `update_comment`: replace an existing comment's body with new Markdown
 
 ## Roadmap
 
-More write support is planned next.
-
-Planned write tools:
-
-| Tool | Purpose |
-| --- | --- |
-| `create_comment` | Add a comment to a page |
-| `update_comment` | Update an existing comment |
+All planned read and write tools are now implemented. `create_comment` adds
+page-level comments; comments anchored to a specific text selection (inline
+comments) require the collaborative editor's cursor positions and are out of
+scope for this REST-based server.
 
 ## Requirements
 
