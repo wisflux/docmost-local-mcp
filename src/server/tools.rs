@@ -23,7 +23,7 @@ impl DocmostMcpServer {
         let client = crate::docmost_client::DocmostClient::new(auth_manager);
         Ok(Self {
             client,
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router() + Self::write_tool_router(),
         })
     }
 

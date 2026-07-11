@@ -237,7 +237,7 @@ pub fn format_updated_page(page: &DocmostPage) -> String {
     lines.join("\n")
 }
 
-fn format_optional_id(value: Option<&str>) -> String {
+pub(super) fn format_optional_id(value: Option<&str>) -> String {
     value
         .map(|value| format!("`{value}`"))
         .unwrap_or_else(|| "Unknown".to_string())

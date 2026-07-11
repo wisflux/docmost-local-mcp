@@ -9,6 +9,7 @@ use crate::docmost_client::DocmostClient;
 
 mod render;
 mod tools;
+mod tools_write;
 
 #[derive(Debug, Clone)]
 pub struct DocmostMcpServer {
@@ -21,7 +22,7 @@ impl ServerHandler for DocmostMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Docmost MCP server for listing spaces, searching docs, and fetching pages, plus creating and updating pages from Markdown."
+                "Docmost MCP server for listing spaces, searching docs, and fetching pages, plus creating and updating pages from Markdown and organizing pages (duplicate, move, and copy or move between spaces)."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

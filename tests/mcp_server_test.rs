@@ -45,6 +45,10 @@ async fn server_lists_expected_tools() -> Result<()> {
         "get_current_user",
         "create_page",
         "update_page",
+        "duplicate_page",
+        "copy_page_to_space",
+        "move_page",
+        "move_page_to_space",
     ] {
         assert!(
             tool_names.iter().any(|name| name == expected),
@@ -148,6 +152,12 @@ async fn server_required_input_fields_are_present() -> Result<()> {
         ("create_page", "space_id"),
         ("create_page", "title"),
         ("update_page", "page_id"),
+        ("duplicate_page", "page_id"),
+        ("copy_page_to_space", "page_id"),
+        ("copy_page_to_space", "space_id"),
+        ("move_page", "page_id"),
+        ("move_page_to_space", "page_id"),
+        ("move_page_to_space", "space_id"),
     ] {
         let tool = tools
             .tools

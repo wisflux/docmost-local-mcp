@@ -42,6 +42,10 @@ If you run your own Docmost and want it available inside Cursor, Claude Desktop,
 - `get_current_user`: fetch the authenticated user and workspace context
 - `create_page`: create a new page in a space from Markdown content
 - `update_page`: update an existing page's title and/or Markdown content
+- `duplicate_page`: duplicate a page (and its sub-pages) within its space
+- `copy_page_to_space`: copy a page (and its sub-pages) into a different space
+- `move_page`: move a page under a new parent page, or to the space root
+- `move_page_to_space`: move a page (and its sub-pages) to a different space
 
 ## Roadmap
 
@@ -51,10 +55,6 @@ Planned write tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `duplicate_page` | Duplicate a page within its space |
-| `copy_page_to_space` | Copy a page to a different space |
-| `move_page` | Move a page to a different position or parent |
-| `move_page_to_space` | Move a page to a different space |
 | `create_space` | Create a new space |
 | `update_space` | Update a space's name or description |
 | `create_comment` | Add a comment to a page |

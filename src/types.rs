@@ -152,6 +152,7 @@ pub struct DocmostPageListItem {
     pub space_id: Option<String>,
     pub updated_at: Option<String>,
     pub space: Option<DocmostSearchSpace>,
+    pub position: Option<String>, // fractional-index sibling ordering key; see crate::position
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -295,6 +296,41 @@ pub struct UpdatePageInput {
         description = "Optional new page body as Markdown; replaces the existing content. Omit to leave content unchanged."
     )]
     pub markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct DuplicatePageInput {
+    #[schemars(description = "The Docmost page ID or slug ID to duplicate within its space.")]
+    pub page_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CopyPageToSpaceInput {
+    #[schemars(description = "The Docmost page ID or slug ID to copy.")]
+    pub page_id: String,
+    #[schemars(description = "The target space ID (UUID) to copy the page into.")]
+    pub space_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct MovePageInput {
+    #[schemars(description = "The Docmost page ID or slug ID to move.")]
+    pub page_id: String,
+    #[serde(default)]
+    #[schemars(
+        description = "Optional new parent page ID within the same space. Omit to move the page to the space root. The page is appended after the parent's existing children."
+    )]
+    pub parent_page_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct MovePageToSpaceInput {
+    #[schemars(description = "The Docmost page ID or slug ID to move.")]
+    pub page_id: String,
+    #[schemars(
+        description = "The target space ID (UUID) to move the page (and its sub-pages) into."
+    )]
+    pub space_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

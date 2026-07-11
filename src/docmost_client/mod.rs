@@ -36,6 +36,8 @@ pub struct CursorListResult<T> {
     pub items: Option<Vec<T>>,
 }
 
+mod writes;
+
 impl DocmostClient {
     pub fn new(auth_manager: AuthManager) -> Self {
         Self {
@@ -185,130 +187,13 @@ impl DocmostClient {
             .await
     }
 
-    /// Create a Docmost page.
-    ///
-    /// When `markdown` body content is supplied it is routed through the **import**
-    /// endpoint (`POST /api/pages/import`), which is the only mechanism that actually
-    /// persists page body content — including the Yjs `ydoc` the editor reads from —
-    /// across Docmost versions (the JSON `create`/`update` `content` field is silently
-    /// dropped on older servers such as v0.25.x). Title-only pages use the plain create
-    /// endpoint.
-    ///
-    /// `parent_page_id` is honored only for title-only pages: the import endpoint always
-    /// creates the page at the space root and exposes no parent parameter on v0.25.x.
-    pub async fn create_page(
-        &self,
-        space_id: &str,
-        title: &str,
-        markdown: Option<&str>,
-        parent_page_id: Option<&str>,
-    ) -> Result<DocmostPage> {
-        if let Some(markdown) = markdown.filter(|markdown| !markdown.trim().is_empty()) {
-            // Docmost's importer takes the first level-1 heading as the page title and
-            // strips it from the body, so prepend `# {title}` to set the title exactly.
-            let document = format!("# {title}\n\n{markdown}");
-            return self.import_markdown_page(space_id, &document).await;
-        }
-
-        let mut payload = serde_json::json!({
-            "spaceId": space_id,
-            "title": title,
-        });
-        if let Some(parent_page_id) = parent_page_id {
-            payload["parentPageId"] = Value::String(parent_page_id.to_string());
-        }
-
-        self.request::<DocmostPage>("/api/pages/create", payload, true)
-            .await
-    }
-
-    /// Upload a Markdown document to Docmost's import endpoint, creating a new page with
-    /// fully-persisted body content (`content` + `textContent` + `ydoc`). Sends a
-    /// multipart form with a `spaceId` text field and a `file` part (the `.md` bytes);
-    /// mirrors [`Self::request`]'s bearer auth and single 401-retry.
-    pub async fn import_markdown_page(
-        &self,
-        space_id: &str,
-        markdown: &str,
-    ) -> Result<DocmostPage> {
-        let endpoint = "/api/pages/import";
-        let mut session = self.auth_manager.get_authenticated_session().await?;
-        let mut retry_on_unauthorized = true;
-
-        loop {
-            // A multipart Form cannot be cloned, so it is rebuilt for each attempt.
-            let form = reqwest::multipart::Form::new()
-                .text("spaceId", space_id.to_string())
-                .part(
-                    "file",
-                    reqwest::multipart::Part::bytes(markdown.as_bytes().to_vec())
-                        // Docmost validates the import type by file extension, not MIME,
-                        // so the name MUST end in `.md`.
-                        .file_name("page.md")
-                        .mime_str("text/markdown")?,
-                );
-
-            debug_log(
-                "api",
-                "Importing Docmost page",
-                Some(&serde_json::json!({
-                    "endpoint": endpoint,
-                    "baseUrl": session.base_url,
-                    "spaceId": space_id,
-                    "retryOnUnauthorized": retry_on_unauthorized
-                })),
-            );
-
-            let response = self
-                .http
-                .post(format!("{}{}", session.base_url, endpoint))
-                .bearer_auth(&session.token)
-                .multipart(form)
-                .send()
-                .await
-                .with_context(|| format!("Failed to call {endpoint}"))?;
-
-            if response.status() == reqwest::StatusCode::UNAUTHORIZED && retry_on_unauthorized {
-                session = self.auth_manager.reauthenticate().await?;
-                retry_on_unauthorized = false;
-                continue;
-            }
-
-            return parse_response(response).await;
-        }
-    }
-
-    pub async fn update_page(
-        &self,
-        page_id: &str,
-        title: Option<&str>,
-        content: Option<&Value>,
-    ) -> Result<DocmostPage> {
-        let mut payload = serde_json::json!({ "pageId": page_id });
-        if let Some(title) = title {
-            payload["title"] = Value::String(title.to_string());
-        }
-        if let Some(content) = content {
-            // Docmost only applies a content change when `content`, `operation`, and
-            // `format` are all present; `operation` has no server-side default.
-            payload["content"] = content.clone();
-            payload["operation"] = Value::String("replace".to_string());
-            payload["format"] = Value::String("json".to_string());
-        }
-
-        self.request::<DocmostPage>("/api/pages/update", payload, true)
-            .await
-    }
-
-    async fn request<T>(
+    /// POST with bearer auth and a single 401-retry, returning the raw response.
+    async fn send_json(
         &self,
         endpoint: &str,
         payload: Value,
         retry_on_unauthorized: bool,
-    ) -> Result<T>
-    where
-        T: DeserializeOwned,
-    {
+    ) -> Result<Response> {
         let mut session = self.auth_manager.get_authenticated_session().await?;
         let mut retry_on_unauthorized = retry_on_unauthorized;
 
@@ -354,8 +239,31 @@ impl DocmostClient {
                 continue;
             }
 
-            return parse_response(response).await;
+            return Ok(response);
         }
+    }
+
+    /// POST and deserialize the `{ data }` envelope, erroring if no data is returned.
+    async fn request<T>(&self, endpoint: &str, payload: Value, retry: bool) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        parse_response(self.send_json(endpoint, payload, retry).await?).await
+    }
+
+    /// POST a write that returns no meaningful body (e.g. move-to-space); succeeds on 2xx.
+    async fn request_discard(&self, endpoint: &str, payload: Value) -> Result<()> {
+        let response = self.send_json(endpoint, payload, true).await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let details = safe_read_response_text(response).await;
+            return Err(anyhow!(
+                format!("Docmost API request failed ({status}). {details}")
+                    .trim()
+                    .to_string()
+            ));
+        }
+        Ok(())
     }
 }
 
