@@ -389,3 +389,282 @@ fn markdown_round_trips_through_prosemirror() {
         );
     }
 }
+
+// --- markdown_to_prosemirror: extended edge-case coverage ---
+
+/// The direct children of the top-level `doc` node.
+fn doc_children(doc: &Value) -> &Vec<Value> {
+    doc.get("content")
+        .and_then(Value::as_array)
+        .expect("doc has a content array")
+}
+
+fn node_type(node: &Value) -> Option<&str> {
+    node.get("type").and_then(Value::as_str)
+}
+
+#[test]
+fn markdown_to_prosemirror_empty_input_is_empty_doc() {
+    let doc = markdown_to_prosemirror("");
+    assert_eq!(node_type(&doc), Some("doc"));
+    assert!(
+        doc_children(&doc).is_empty(),
+        "empty markdown must yield an empty doc, got: {doc}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_whitespace_only_input_is_empty_doc() {
+    let doc = markdown_to_prosemirror("   \n\n  \t\n");
+    assert_eq!(node_type(&doc), Some("doc"));
+    assert!(
+        doc_children(&doc).is_empty(),
+        "whitespace-only markdown must not create spurious nodes, got: {doc}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_all_heading_levels() {
+    for level in 1..=6u64 {
+        let hashes = "#".repeat(level as usize);
+        let doc = markdown_to_prosemirror(&format!("{hashes} Heading {level}"));
+        let heading = find_node(&doc, "heading").expect("heading node");
+        assert_eq!(
+            heading
+                .get("attrs")
+                .and_then(|attrs| attrs.get("level"))
+                .and_then(Value::as_u64),
+            Some(level),
+            "wrong level for {hashes}"
+        );
+    }
+}
+
+#[test]
+fn markdown_to_prosemirror_multiple_block_paragraphs() {
+    let doc = markdown_to_prosemirror("First paragraph.\n\nSecond paragraph.");
+    let paragraphs: Vec<&Value> = doc_children(&doc)
+        .iter()
+        .filter(|node| node_type(node) == Some("paragraph"))
+        .collect();
+    assert_eq!(paragraphs.len(), 2, "expected two block paragraphs: {doc}");
+}
+
+#[test]
+fn markdown_to_prosemirror_blockquote_wraps_paragraph() {
+    let doc = markdown_to_prosemirror("> quoted line");
+    let quote = find_node(&doc, "blockquote").expect("blockquote node");
+    let paragraph = find_node(quote, "paragraph").expect("paragraph inside blockquote");
+    let text = find_node(paragraph, "text").expect("text inside quote paragraph");
+    assert_eq!(
+        text.get("text").and_then(Value::as_str),
+        Some("quoted line")
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_ordered_list_records_non_default_start() {
+    let doc = markdown_to_prosemirror("3. three\n4. four");
+    let list = find_node(&doc, "orderedList").expect("orderedList node");
+    assert_eq!(
+        list.get("attrs")
+            .and_then(|attrs| attrs.get("start"))
+            .and_then(Value::as_u64),
+        Some(3),
+        "non-default start must be recorded: {list}"
+    );
+    // And the reader renders it back with the right starting index.
+    let rendered = prosemirror_to_markdown(&doc);
+    assert!(rendered.contains("3. three"), "rendered:\n{rendered}");
+    assert!(rendered.contains("4. four"), "rendered:\n{rendered}");
+}
+
+#[test]
+fn markdown_to_prosemirror_ordered_list_omits_default_start() {
+    let doc = markdown_to_prosemirror("1. one\n2. two");
+    let list = find_node(&doc, "orderedList").expect("orderedList node");
+    let start = list
+        .get("attrs")
+        .and_then(|attrs| attrs.get("start"))
+        .and_then(Value::as_u64);
+    assert!(
+        start.is_none(),
+        "a start of 1 is the default and must be omitted, got: {list}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_mixed_task_and_plain_list_homogenizes_to_task_list() {
+    // A list that mixes a task item with a plain item is coerced entirely to a taskList,
+    // with the plain item becoming an unchecked task item (so nothing is dropped).
+    let doc = markdown_to_prosemirror("- [x] done\n- plain item");
+    let task_list = find_node(&doc, "taskList").expect("mixed list homogenized to taskList");
+    let items = task_list
+        .get("content")
+        .and_then(Value::as_array)
+        .expect("taskList items");
+    assert_eq!(items.len(), 2, "both items must survive: {task_list}");
+    assert!(
+        items.iter().all(|item| node_type(item) == Some("taskItem")),
+        "every item must be a taskItem: {task_list}"
+    );
+    assert_eq!(
+        items[0]
+            .get("attrs")
+            .and_then(|attrs| attrs.get("checked"))
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        items[1]
+            .get("attrs")
+            .and_then(|attrs| attrs.get("checked"))
+            .and_then(Value::as_bool),
+        Some(false),
+        "the coerced plain item must be an unchecked task"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_inline_code_mark_is_innermost() {
+    // The reader applies marks in array order, so `code` must come first (innermost) to
+    // render **`x`** rather than `**x**`.
+    let doc = markdown_to_prosemirror("**`snippet`**");
+    let paragraph = find_node(&doc, "paragraph").expect("paragraph node");
+    let code_node = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .find(|node| mark_types(node).contains(&"code".to_string()))
+        .expect("code-marked text node");
+    let marks = mark_types(code_node);
+    let code_pos = marks.iter().position(|m| m == "code").unwrap();
+    let bold_pos = marks.iter().position(|m| m == "bold").unwrap();
+    assert!(
+        code_pos < bold_pos,
+        "code mark must precede bold, marks: {marks:?}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_hard_break_becomes_hard_break_node() {
+    // Two trailing spaces before the newline is a CommonMark hard break.
+    let doc = markdown_to_prosemirror("line one  \nline two");
+    assert!(
+        find_node(&doc, "hardBreak").is_some(),
+        "hard break node expected: {doc}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_soft_break_joins_with_space() {
+    let doc = markdown_to_prosemirror("line one\nline two");
+    let paragraph = find_node(&doc, "paragraph").expect("paragraph node");
+    let joined: String = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(|node| node.get("text").and_then(Value::as_str))
+        .collect();
+    assert_eq!(joined, "line one line two", "soft break should be a space");
+}
+
+#[test]
+fn markdown_to_prosemirror_nested_ordered_list_inside_bullet() {
+    let doc = markdown_to_prosemirror("- outer\n  1. inner");
+    let bullet = find_node(&doc, "bulletList").expect("outer bulletList");
+    let nested = find_node(bullet, "orderedList").expect("nested orderedList");
+    let text = find_node(nested, "text").expect("nested text");
+    assert_eq!(text.get("text").and_then(Value::as_str), Some("inner"));
+}
+
+#[test]
+fn markdown_to_prosemirror_code_block_without_language_has_empty_language() {
+    let doc = markdown_to_prosemirror("```\nplain code\n```");
+    let code_block = find_node(&doc, "codeBlock").expect("codeBlock node");
+    assert_eq!(
+        code_block
+            .get("attrs")
+            .and_then(|attrs| attrs.get("language"))
+            .and_then(Value::as_str),
+        Some(""),
+        "no fence info => empty language: {code_block}"
+    );
+    let text = find_node(code_block, "text").expect("code text");
+    assert_eq!(text.get("text").and_then(Value::as_str), Some("plain code"));
+}
+
+#[test]
+fn markdown_to_prosemirror_table_body_cells_are_not_headers() {
+    let doc = markdown_to_prosemirror("| H1 | H2 |\n| --- | --- |\n| a | b |");
+    let table = find_node(&doc, "table").expect("table node");
+    let rows: Vec<&Value> = table
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .collect();
+    assert_eq!(rows.len(), 2, "one header row + one body row: {table}");
+    // Header row uses tableHeader cells.
+    assert!(find_node(rows[0], "tableHeader").is_some());
+    // Body row uses tableCell (not tableHeader).
+    assert!(find_node(rows[1], "tableCell").is_some());
+    assert!(
+        find_node(rows[1], "tableHeader").is_none(),
+        "body row must not contain header cells: {:?}",
+        rows[1]
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_lone_image_is_a_block_node() {
+    // A paragraph containing only an image is hoisted so the image is a block child of doc.
+    let doc = markdown_to_prosemirror("![alt text](https://example.com/pic.png)");
+    let first = doc_children(&doc).first().expect("a top-level node");
+    assert_eq!(
+        node_type(first),
+        Some("image"),
+        "lone image should be hoisted to a block node: {doc}"
+    );
+}
+
+#[test]
+fn markdown_to_prosemirror_link_carries_href_and_text() {
+    let doc = markdown_to_prosemirror("see [the site](https://example.com/page)");
+    let link_node = find_node(&doc, "paragraph")
+        .and_then(|p| p.get("content"))
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .find(|node| mark_types(node).contains(&"link".to_string()))
+        .cloned()
+        .expect("link text node");
+    assert_eq!(
+        link_node.get("text").and_then(Value::as_str),
+        Some("the site")
+    );
+    let href = link_node
+        .get("marks")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .find(|mark| mark.get("type").and_then(Value::as_str) == Some("link"))
+        .and_then(|mark| mark.get("attrs"))
+        .and_then(|attrs| attrs.get("href"))
+        .and_then(Value::as_str);
+    assert_eq!(href, Some("https://example.com/page"));
+}
+
+#[test]
+fn markdown_round_trips_ordered_start_blockquote_and_strike() {
+    let source = "> a quote with ~~struck~~ text\n\n5. five\n6. six\n";
+    let rendered = prosemirror_to_markdown(&markdown_to_prosemirror(source));
+    for needle in ["> a quote", "~~struck~~", "5. five", "6. six"] {
+        assert!(
+            rendered.contains(needle),
+            "missing {needle:?} in:\n{rendered}"
+        );
+    }
+}

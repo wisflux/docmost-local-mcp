@@ -242,3 +242,74 @@ fn format_optional_id(value: Option<&str>) -> String {
         .map(|value| format!("`{value}`"))
         .unwrap_or_else(|| "Unknown".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn page(value: serde_json::Value) -> DocmostPage {
+        serde_json::from_value(value).expect("valid DocmostPage")
+    }
+
+    #[test]
+    fn format_created_page_uses_returned_title_and_ids() {
+        let output = format_created_page(
+            &page(json!({
+                "id": "p1",
+                "slugId": "s1",
+                "title": "Release Notes",
+                "spaceId": "space-1"
+            })),
+            "requested title",
+        );
+        assert!(output.contains("Created Docmost page \"Release Notes\"."));
+        assert!(output.contains("Page ID: `p1`"));
+        assert!(output.contains("Slug ID: `s1`"));
+        assert!(output.contains("Space ID: `space-1`"));
+    }
+
+    #[test]
+    fn format_created_page_falls_back_to_requested_title() {
+        // The import endpoint sometimes returns no title; the caller's title is used.
+        let output = format_created_page(&page(json!({ "id": "p1" })), "My Requested Title");
+        assert!(
+            output.contains("Created Docmost page \"My Requested Title\"."),
+            "output: {output}"
+        );
+    }
+
+    #[test]
+    fn format_created_page_marks_missing_ids_unknown() {
+        let output = format_created_page(&page(json!({ "title": "T" })), "T");
+        assert!(output.contains("Page ID: Unknown"), "output: {output}");
+        assert!(output.contains("Slug ID: Unknown"), "output: {output}");
+        assert!(output.contains("Space ID: Unknown"), "output: {output}");
+    }
+
+    #[test]
+    fn format_updated_page_reports_title_and_collaborative_note() {
+        let output = format_updated_page(&page(json!({
+            "id": "p1",
+            "slugId": "s1",
+            "title": "Renamed"
+        })));
+        assert!(output.contains("Updated Docmost page \"Renamed\"."));
+        assert!(output.contains("Page ID: `p1`"));
+        // Documents current behavior: the collaborative-editor note is always present,
+        // including for title-only updates where no body was sent.
+        assert!(
+            output.contains("applied via the collaborative editor"),
+            "output: {output}"
+        );
+    }
+
+    #[test]
+    fn format_updated_page_falls_back_to_untitled() {
+        let output = format_updated_page(&page(json!({ "id": "p1" })));
+        assert!(
+            output.contains("Updated Docmost page \"Untitled\"."),
+            "output: {output}"
+        );
+    }
+}
