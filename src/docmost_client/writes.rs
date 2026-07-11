@@ -172,14 +172,27 @@ impl super::DocmostClient {
             .as_deref()
             .ok_or_else(|| anyhow!("Page {page_id} is not in a space"))?;
 
+        // Resolve the target parent to its canonical UUID: the sidebar filter matches the
+        // `parentPageId` column (a UUID), so a slug would find no children and place the
+        // page at the space root of that branch. Resolving also validates the parent exists.
+        let parent_uuid = match parent_page_id {
+            Some(parent) => Some(
+                self.get_page(parent)
+                    .await?
+                    .and_then(|page| page.id)
+                    .ok_or_else(|| anyhow!("Target parent page not found: {parent}"))?,
+            ),
+            None => None,
+        };
+
         let last = self
-            .last_sibling_position(space_id, parent_page_id, page.id.as_deref())
+            .last_sibling_position(space_id, parent_uuid.as_deref(), page.id.as_deref())
             .await?;
         let position = generate_jittered_key_between(last.as_deref(), None)?;
 
         let mut payload = serde_json::json!({ "pageId": page_id, "position": position });
-        if let Some(parent_page_id) = parent_page_id {
-            payload["parentPageId"] = Value::String(parent_page_id.to_string());
+        if let Some(parent_uuid) = &parent_uuid {
+            payload["parentPageId"] = Value::String(parent_uuid.clone());
         }
         self.request_discard("/api/pages/move", payload).await?;
 
@@ -197,7 +210,11 @@ impl super::DocmostClient {
         parent_page_id: Option<&str>,
         exclude_id: Option<&str>,
     ) -> Result<Option<String>> {
-        let mut payload = serde_json::json!({ "spaceId": space_id });
+        // sidebar-pages is cursor-paginated ascending by position (default 20, max 100).
+        // Request the max page size so `.max()` sees the true last sibling; parents with
+        // more than 100 direct children would still under-read (rare, and only affects the
+        // ordering of the appended page, never correctness of the move itself).
+        let mut payload = serde_json::json!({ "spaceId": space_id, "limit": 100 });
         if let Some(parent_page_id) = parent_page_id {
             payload["pageId"] = Value::String(parent_page_id.to_string());
         }

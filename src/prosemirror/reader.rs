@@ -187,7 +187,9 @@ fn extract_text(content: &[Value]) -> String {
                     .and_then(|a| a.get("entityId"))
                     .and_then(Value::as_str)
                     .unwrap_or("");
-                if entity_id.is_empty() {
+                // A `[` or `]` in the label would break the `[label](...)` syntax and the
+                // writer would mis-parse it, so fall back to a plain `@label` there.
+                if entity_id.is_empty() || label.contains(['[', ']']) {
                     parts.push(format!("@{label}"));
                 } else {
                     parts.push(format!("[{label}]({entity_type}:{entity_id})"));

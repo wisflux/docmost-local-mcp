@@ -114,9 +114,12 @@ pub(super) fn encode_to_charset(mut int: u64) -> String {
 }
 
 fn decode_to_number(key: &str) -> u64 {
+    // Saturating like the upstream JS (which loses precision past 2^53 rather than
+    // throwing): only very long lexical distances (>=11 base62 digits) can overflow, and
+    // the append path (`upper = None`) never produces them.
     let mut res: u64 = 0;
     for &c in key.as_bytes() {
-        res = res * LEN as u64 + val(c) as u64;
+        res = res.saturating_mul(LEN as u64).saturating_add(val(c) as u64);
     }
     res
 }

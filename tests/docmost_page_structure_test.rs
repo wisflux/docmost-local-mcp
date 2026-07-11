@@ -80,9 +80,21 @@ fn record(state: &Captured, route: &str, body: Value) {
 }
 
 async fn info_route(State(state): State<Captured>, Json(body): Json<Value>) -> Json<Value> {
+    // Echo the requested pageId back as the resolved page id, so tests can observe slug ->
+    // UUID resolution. "parent-slug" resolves to a distinct UUID "parent-uuid".
+    let requested = body
+        .get("pageId")
+        .and_then(Value::as_str)
+        .unwrap_or(MOVED_PAGE_ID);
+    let id = if requested == "parent-slug" {
+        "parent-uuid"
+    } else {
+        requested
+    }
+    .to_string();
     record(&state, "info", body);
     Json(json!({
-        "data": { "id": MOVED_PAGE_ID, "slugId": "slug-1", "title": "Doc", "spaceId": "space-1", "parentPageId": null },
+        "data": { "id": id, "slugId": "slug-1", "title": "Doc", "spaceId": "space-1", "parentPageId": null },
         "success": true, "status": 200
     }))
 }
@@ -208,6 +220,27 @@ async fn copy_page_to_space_sends_target_space() -> Result<()> {
 }
 
 #[tokio::test]
+async fn move_page_resolves_slug_parent_to_uuid() -> Result<()> {
+    // A slug passed as the parent must be resolved to its UUID before the sibling lookup
+    // (which filters by the parentPageId column) and the move — otherwise the page would
+    // land at the start of the parent instead of after its children.
+    let temp = TempDir::new()?;
+    let (client, state) = spawn(&temp).await?;
+
+    client.move_page(MOVED_PAGE_ID, Some("parent-slug")).await?;
+
+    let sidebar = last(&state, "sidebar");
+    assert_eq!(
+        sidebar["pageId"],
+        json!("parent-uuid"),
+        "sibling lookup must use the resolved parent UUID, not the slug"
+    );
+    let mv = last(&state, "move");
+    assert_eq!(mv["parentPageId"], json!("parent-uuid"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn move_page_to_space_tolerates_empty_response() -> Result<()> {
     let temp = TempDir::new()?;
     let (client, state) = spawn(&temp).await?;
@@ -228,10 +261,12 @@ async fn move_page_appends_after_last_sibling_excluding_itself() -> Result<()> {
 
     client.move_page(MOVED_PAGE_ID, Some("parent-9")).await?;
 
-    // Sibling lookup targets the parent within the page's space.
+    // Sibling lookup targets the parent within the page's space, at the max page size so
+    // the true last sibling is seen even for parents with many children.
     let sidebar = last(&state, "sidebar");
     assert_eq!(sidebar["spaceId"], json!("space-1"));
     assert_eq!(sidebar["pageId"], json!("parent-9"));
+    assert_eq!(sidebar["limit"], json!(100));
 
     let mv = last(&state, "move");
     assert_eq!(mv["pageId"], json!(MOVED_PAGE_ID));

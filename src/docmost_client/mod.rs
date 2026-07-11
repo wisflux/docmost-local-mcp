@@ -20,8 +20,8 @@ use crate::{
 pub struct DocmostClient {
     auth_manager: AuthManager,
     http: Client,
-    /// Detected server version, fetched once and shared across clones.
-    version: Arc<OnceCell<Option<ServerVersion>>>,
+    /// Detected server version, fetched once (on success) and shared across clones.
+    version: Arc<OnceCell<ServerVersion>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -53,31 +53,29 @@ impl DocmostClient {
         }
     }
 
-    /// The detected Docmost server version (from `POST /api/version`), fetched once and
-    /// cached. `None` if the endpoint is unavailable (e.g. Docmost Cloud) or unparseable.
+    /// The detected Docmost server version (from `POST /api/version`). Fetched once and
+    /// cached **only on success**, so a transient probe failure doesn't poison the session
+    /// (a later call re-probes). `None` if the endpoint is unavailable (e.g. Docmost Cloud)
+    /// or the version is unparseable.
     pub async fn server_version(&self) -> Option<ServerVersion> {
-        *self
-            .version
-            .get_or_init(|| async {
-                match self
+        self.version
+            .get_or_try_init(|| async {
+                let response = self
                     .request::<VersionResponse>("/api/version", serde_json::json!({}), true)
                     .await
-                {
-                    Ok(response) => response
-                        .current_version
-                        .as_deref()
-                        .and_then(ServerVersion::parse),
-                    Err(error) => {
+                    .map_err(|error| {
+                        let detail = serde_json::json!({ "error": error.to_string() });
                         debug_log(
                             "version",
-                            "Could not determine Docmost server version",
-                            Some(&serde_json::json!({ "error": error.to_string() })),
+                            "Could not determine Docmost version",
+                            Some(&detail),
                         );
-                        None
-                    }
-                }
+                    })?;
+                response.version().ok_or(())
             })
             .await
+            .ok()
+            .copied()
     }
 
     /// Version-gated server capabilities (see [`crate::version::Capabilities`]).

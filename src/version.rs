@@ -88,6 +88,26 @@ pub struct VersionResponse {
     pub current_version: Option<String>,
 }
 
+impl VersionResponse {
+    /// The parsed server version, if present and parseable. Emits a debug log when the
+    /// server is older than [`MIN_SUPPORTED_VERSION`] (behaviour there is best-effort).
+    pub fn version(&self) -> Option<ServerVersion> {
+        let version = self
+            .current_version
+            .as_deref()
+            .and_then(ServerVersion::parse)?;
+        if version < MIN_SUPPORTED_VERSION {
+            let detail = serde_json::json!({ "version": version.to_string() });
+            crate::debug::debug_log(
+                "version",
+                "Docmost older than supported floor",
+                Some(&detail),
+            );
+        }
+        Some(version)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

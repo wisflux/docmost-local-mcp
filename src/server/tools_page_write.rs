@@ -44,7 +44,23 @@ impl DocmostMcpServer {
             )
             .await
             .map_err(internal_error)?;
-        Ok(format_created_page(&page, &input.title))
+
+        let mut output = format_created_page(&page, &input.title);
+        // Be honest: a page created WITH a body goes through the import endpoint, which has
+        // no parent parameter, so `parent_page_id` is silently ignored and the page lands
+        // at the space root. Say so rather than report a plain success.
+        let has_body = input
+            .markdown
+            .as_deref()
+            .is_some_and(|m| !m.trim().is_empty());
+        if has_body && input.parent_page_id.is_some() {
+            output.push_str(
+                "\n\nNote: this page was created at the space root — parent_page_id is not \
+                 applied when a Markdown body is provided (Docmost's import path has no parent \
+                 parameter). Use move_page afterwards to nest it under a parent.",
+            );
+        }
+        Ok(output)
     }
 
     #[tool(

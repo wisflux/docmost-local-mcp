@@ -25,11 +25,8 @@ impl DocBuilder {
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
             Event::Code(code) => self.inline_code(&code),
-            Event::SoftBreak => {
-                let marks = self.marks.clone();
-                self.push_inline(text_node(" ", &marks));
-            }
-            Event::HardBreak => self.push_inline(json!({ "type": "hardBreak" })),
+            Event::SoftBreak => self.push_break(true),
+            Event::HardBreak => self.push_break(false),
             Event::Rule => self.append_to_top(json!({ "type": "horizontalRule" })),
             Event::TaskListMarker(checked) => self.task_marker(checked),
             _ => {}
@@ -104,23 +101,23 @@ impl DocBuilder {
         }
     }
 
-    /// A `user:`/`page:` link URL starts a mention; anything else is a normal link mark.
+    /// A `user:`/`page:` URL with a non-empty id starts a mention; else a normal link mark.
     fn start_link(&mut self, url: &str) {
-        if let Some(id) = url.strip_prefix("user:") {
-            self.pending_mention = Some(Mention {
-                entity_type: "user".to_string(),
-                entity_id: id.to_string(),
-                label: String::new(),
-            });
-        } else if let Some(id) = url.strip_prefix("page:") {
-            self.pending_mention = Some(Mention {
-                entity_type: "page".to_string(),
-                entity_id: id.to_string(),
-                label: String::new(),
-            });
-        } else {
-            self.marks
-                .push(json!({ "type": "link", "attrs": { "href": url } }));
+        let mention = url
+            .strip_prefix("user:")
+            .map(|id| ("user", id))
+            .or_else(|| url.strip_prefix("page:").map(|id| ("page", id)));
+        match mention {
+            Some((entity_type, id)) if !id.is_empty() => {
+                self.pending_mention = Some(Mention {
+                    entity_type: entity_type.to_string(),
+                    entity_id: id.to_string(),
+                    label: String::new(),
+                });
+            }
+            _ => self
+                .marks
+                .push(json!({ "type": "link", "attrs": { "href": url } })),
         }
     }
 
@@ -140,8 +137,7 @@ impl DocBuilder {
             TagEnd::Paragraph => self.finish_paragraph(),
             TagEnd::List(_) => self.finish_list(),
             TagEnd::TableHead => {
-                // Subsequent rows are body rows whose cells are `tableCell`.
-                self.in_table_head = false;
+                self.in_table_head = false; // subsequent rows use tableCell
                 self.close_frame();
             }
             TagEnd::Heading(_)
@@ -173,6 +169,10 @@ impl DocBuilder {
     }
 
     fn inline_code(&mut self, code: &str) {
+        if let Some(mention) = self.pending_mention.as_mut() {
+            mention.label.push_str(code); // code in a mention label is just display text
+            return;
+        }
         // The `code` mark must be innermost (first in the array) so the reader, which
         // applies marks in order, wraps the text with backticks before any surrounding
         // bold/italic/link — e.g. **`x`**, not `**x**`.
@@ -191,6 +191,18 @@ impl DocBuilder {
         let depth = self.stack.len();
         if depth >= 2 {
             self.stack[depth - 2].is_task_list = true;
+        }
+    }
+
+    /// A break inside an open mention label becomes a space; otherwise the usual break.
+    fn push_break(&mut self, soft: bool) {
+        if let Some(mention) = self.pending_mention.as_mut() {
+            mention.label.push(' ');
+        } else if soft {
+            let marks = self.marks.clone();
+            self.push_inline(text_node(" ", &marks));
+        } else {
+            self.push_inline(json!({ "type": "hardBreak" }));
         }
     }
 
@@ -258,8 +270,7 @@ impl DocBuilder {
         if frame.content.is_empty() {
             return;
         }
-        // CommonMark wraps a top-level image in a paragraph; hoist a lone-image
-        // paragraph so the image becomes a block node the reader can render.
+        // CommonMark wraps a top-level image in a paragraph; hoist it to a block image.
         let all_images = frame
             .content
             .iter()
@@ -278,10 +289,8 @@ impl DocBuilder {
             return;
         }
         let mut frame = self.stack.pop().unwrap();
-        // A taskList must contain only taskItems, and a bulletList/orderedList only
-        // listItems — the reader skips the wrong kind. When a list has any task marker,
-        // homogenize it to a taskList and coerce plain items to unchecked task items so
-        // no item is dropped (rather than losing either the tasks or the plain items).
+        // A list with any task marker is homogenized to a taskList; plain items become
+        // unchecked task items so nothing is dropped (the reader skips mismatched kinds).
         if frame.is_task_list {
             for item in &mut frame.content {
                 if item.get("type").and_then(Value::as_str) == Some("listItem")

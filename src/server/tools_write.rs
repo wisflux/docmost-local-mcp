@@ -187,6 +187,12 @@ impl DocmostMcpServer {
         &self,
         Parameters(input): Parameters<CreateCommentInput>,
     ) -> Result<String, ErrorData> {
+        if input.markdown.trim().is_empty() {
+            return Err(ErrorData::invalid_params(
+                "Comment markdown must not be empty.".to_string(),
+                None,
+            ));
+        }
         let content = markdown_to_prosemirror(&input.markdown);
         let comment = self
             .client
@@ -211,6 +217,13 @@ impl DocmostMcpServer {
         &self,
         Parameters(input): Parameters<UpdateCommentInput>,
     ) -> Result<String, ErrorData> {
+        // Guard against silently wiping a comment's body with empty content.
+        if input.markdown.trim().is_empty() {
+            return Err(ErrorData::invalid_params(
+                "Comment markdown must not be empty.".to_string(),
+                None,
+            ));
+        }
         let content = markdown_to_prosemirror(&input.markdown);
         let comment = self
             .client

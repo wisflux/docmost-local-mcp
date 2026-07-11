@@ -60,6 +60,21 @@ async fn server_lists_expected_tools() -> Result<()> {
         );
     }
 
+    // Exactly the expected surface: no accidental extra/duplicate registration.
+    assert_eq!(
+        tool_names.len(),
+        20,
+        "unexpected tool count: {tool_names:?}"
+    );
+    let mut unique = tool_names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        tool_names.len(),
+        "duplicate tool names registered"
+    );
+
     client.cancel().await?;
     server_handle.await??;
     Ok(())

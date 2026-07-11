@@ -797,3 +797,67 @@ fn comment_supported_elements_convert() {
         );
     }
 }
+
+#[test]
+fn markdown_to_prosemirror_empty_mention_id_is_a_link_not_a_mention() {
+    // `[x](user:)` has no id — must NOT create a malformed mention with entityId "".
+    let doc = markdown_to_prosemirror("[x](user:)");
+    assert!(
+        find_node(&doc, "mention").is_none(),
+        "empty user id must not become a mention"
+    );
+    let paragraph = find_node(&doc, "paragraph").unwrap();
+    let has_link = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .any(|n| mark_types(n).contains(&"link".to_string()));
+    assert!(has_link, "empty-id mention should fall back to a link");
+}
+
+#[test]
+fn markdown_to_prosemirror_mention_label_captures_inline_code() {
+    // Non-text content inside a mention label must land in the label, not leak into the
+    // surrounding paragraph as a stray node.
+    let doc = markdown_to_prosemirror("ping [`Jane`](user:u1) done");
+    let mention = find_node(&doc, "mention").expect("mention node");
+    assert_eq!(
+        mention
+            .get("attrs")
+            .and_then(|a| a.get("label"))
+            .and_then(Value::as_str),
+        Some("Jane"),
+        "inline code in the label must be captured as label text"
+    );
+    // No stray code-marked text node leaked into the paragraph.
+    let paragraph = find_node(&doc, "paragraph").unwrap();
+    let leaked = paragraph
+        .get("content")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .any(|n| n.get("text").and_then(Value::as_str) == Some("Jane"));
+    assert!(
+        !leaked,
+        "mention label content must not leak into the paragraph"
+    );
+}
+
+#[test]
+fn mention_label_with_bracket_falls_back_to_plain_at() {
+    // A stored mention label containing a bracket can't be rendered as [label](...) without
+    // breaking the writer's re-parse, so the reader emits @label instead of corrupt markdown.
+    let doc = json!({ "type": "doc", "content": [{ "type": "paragraph", "content": [
+        { "type": "mention", "attrs": { "id": "m1", "label": "Jane [Team]", "entityType": "user", "entityId": "u1" } }
+    ] }] });
+    let md = prosemirror_to_markdown(&doc);
+    assert!(
+        md.contains("@Jane [Team]"),
+        "expected @label fallback, got: {md}"
+    );
+    assert!(
+        !md.contains("](user:u1)"),
+        "must not emit broken mention markdown: {md}"
+    );
+}
