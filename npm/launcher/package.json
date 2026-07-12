@@ -1,6 +1,6 @@
 {
   "name": "@wisflux/docmost-local-mcp",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "MCP server for self-hosted Docmost (Community Edition) — read & write your wiki from Claude, Cursor, and VS Code",
   "license": "MIT",
   "type": "module",

@@ -71,6 +71,12 @@ jobs:
           if [[ "${{ matrix.target.binary_name }}" == *.exe ]]; then ext=".exe"; fi
           cp "target/release/${{ matrix.target.binary_name }}" "docmost-local-mcp-${{ matrix.target.id }}${ext}"
 
+      - name: Build headless binary for containers (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --release --no-default-features
+          cp "target/release/${{ matrix.target.binary_name }}" "docmost-local-mcp-${{ matrix.target.id }}-headless"
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v5
         with:
