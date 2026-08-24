@@ -96,7 +96,10 @@ impl super::DocmostClient {
                 .with_context(|| format!("Failed to call {endpoint}"))?;
 
             if response.status() == reqwest::StatusCode::UNAUTHORIZED && retry_on_unauthorized {
-                session = self.auth_manager.reauthenticate().await?;
+                session = self
+                    .auth_manager
+                    .reauthenticate_after_rejection(&session.token)
+                    .await?;
                 retry_on_unauthorized = false;
                 continue;
             }

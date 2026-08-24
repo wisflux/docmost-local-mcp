@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::{Client, Response, header::SET_COOKIE};
+use tokio::sync::Mutex;
 
 use crate::{
     auth::{
@@ -36,6 +37,11 @@ pub struct AuthManager {
     store: Arc<StateStore>,
     configured_base_url: Option<String>,
     http: Client,
+    /// Serializes re-authentication across cloned managers. Without it, every
+    /// concurrent tool call that finds no usable session starts its own login,
+    /// and when no credentials are saved that means one interactive sign-in
+    /// window per call, all but one of which time out after five minutes.
+    reauth_lock: Arc<Mutex<()>>,
 }
 
 impl AuthManager {
@@ -44,21 +50,38 @@ impl AuthManager {
             configured_base_url: options.base_url.as_deref().map(normalize_base_url),
             store: Arc::new(StateStore::new(base_dir)?),
             http: Client::builder().build()?,
+            reauth_lock: Arc::new(Mutex::new(())),
         })
     }
 
     pub async fn get_authenticated_session(&self) -> Result<AuthenticatedSession> {
+        if let Some(session) = self.reusable_session().await? {
+            return Ok(session);
+        }
+
+        let _guard = self.reauth_lock.lock().await;
+
+        // A concurrent caller may have authenticated while we waited for the lock.
+        if let Some(session) = self.reusable_session().await? {
+            return Ok(session);
+        }
+
+        self.reauthenticate_locked().await
+    }
+
+    /// Returns the saved session when it targets the expected base URL and is
+    /// not within the refresh window, or `None` when a login is required.
+    async fn reusable_session(&self) -> Result<Option<AuthenticatedSession>> {
         let config = self.store.read_config().await?;
         let session = self.store.read_session().await?;
-        let preferred_base_url = self
-            .get_preferred_base_url(config.as_ref())
-            .map(ToOwned::to_owned);
         let has_config = config.is_some();
         let has_session = session.is_some();
 
-        if let (Some(config), Some(session)) = (config.as_ref(), session.as_ref()) {
-            let url_matches = preferred_base_url.as_deref() == Some(config.base_url.as_str());
-            if url_matches && !is_session_expiring(session) {
+        if let (Some(config), Some(session)) = (config, session) {
+            let url_matches = self
+                .get_preferred_base_url(Some(&config))
+                .is_some_and(|base_url| base_url == config.base_url);
+            if url_matches && !is_session_expiring(&session) {
                 debug_log(
                     "auth",
                     "Using saved session",
@@ -68,22 +91,54 @@ impl AuthManager {
                         "expiresAt": session.expires_at
                     })),
                 );
-                return Ok(to_authenticated_session(config.clone(), session.clone()));
+                return Ok(Some(to_authenticated_session(config, session)));
             }
         }
 
+        // Deliberately does not claim a reauthentication: this runs on the
+        // pre-lock fast path too, where the caller may end up reusing a session
+        // that another caller refreshes while it waits for the lock.
         debug_log(
             "auth",
-            "Saved session missing or expiring; reauthenticating",
+            "No reusable saved session",
             Some(&serde_json::json!({
                 "hasConfig": has_config,
                 "hasSession": has_session,
             })),
         );
-        self.reauthenticate().await
+        Ok(None)
     }
 
     pub async fn reauthenticate(&self) -> Result<AuthenticatedSession> {
+        let _guard = self.reauth_lock.lock().await;
+        self.reauthenticate_locked().await
+    }
+
+    /// Re-authenticates after Docmost rejected `rejected_token`, reusing a
+    /// session that another caller refreshed in the meantime so that a burst of
+    /// 401s produces one login rather than one per in-flight request.
+    pub async fn reauthenticate_after_rejection(
+        &self,
+        rejected_token: &str,
+    ) -> Result<AuthenticatedSession> {
+        let _guard = self.reauth_lock.lock().await;
+
+        if let Some(session) = self.reusable_session().await?
+            && session.token != rejected_token
+        {
+            debug_log(
+                "auth",
+                "Reusing session refreshed by a concurrent caller",
+                Some(&serde_json::json!({ "baseUrl": session.base_url })),
+            );
+            return Ok(session);
+        }
+
+        self.reauthenticate_locked().await
+    }
+
+    /// Caller must hold `reauth_lock`.
+    async fn reauthenticate_locked(&self) -> Result<AuthenticatedSession> {
         let config = self.store.read_config().await?;
         let credentials = self.store.read_credentials().await?;
         let preferred_base_url = self

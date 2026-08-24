@@ -271,7 +271,10 @@ impl DocmostClient {
                     "Received 401 from Docmost API; retrying after reauthentication",
                     Some(&serde_json::json!({ "endpoint": endpoint })),
                 );
-                session = self.auth_manager.reauthenticate().await?;
+                session = self
+                    .auth_manager
+                    .reauthenticate_after_rejection(&session.token)
+                    .await?;
                 retry_on_unauthorized = false;
                 continue;
             }

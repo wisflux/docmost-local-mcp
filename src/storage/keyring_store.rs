@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 
-use crate::types::StoredCredentials;
+use crate::{debug::debug_log, types::StoredCredentials};
 
 const KEYRING_SERVICE: &str = "docmost-local-mcp";
 const KEYRING_USERNAME: &str = "credentials";
@@ -24,7 +24,16 @@ impl KeyringStore {
                 Ok(Some(credentials))
             }
             Err(error) if is_missing_entry(&error) => Ok(None),
-            Err(error) if should_fallback(&error) => Ok(None),
+            Err(error) if should_fallback(&error) => {
+                // Treating this as "no credentials" sends the caller to the
+                // interactive login, so make the real reason visible.
+                debug_log(
+                    "keyring",
+                    "Keyring read failed; falling back to file-based credentials",
+                    Some(&serde_json::json!({ "error": error.to_string() })),
+                );
+                Ok(None)
+            }
             Err(error) => Err(anyhow!(error)).context("Failed to read credentials from keyring"),
         }
     }
@@ -41,7 +50,14 @@ impl KeyringStore {
 
         match entry.set_password(&value) {
             Ok(()) => Ok(true),
-            Err(error) if should_fallback(&error) => Ok(false),
+            Err(error) if should_fallback(&error) => {
+                debug_log(
+                    "keyring",
+                    "Keyring write failed; falling back to file-based credentials",
+                    Some(&serde_json::json!({ "error": error.to_string() })),
+                );
+                Ok(false)
+            }
             Err(error) => Err(anyhow!(error)).context("Failed to write credentials to keyring"),
         }
     }

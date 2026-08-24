@@ -36,6 +36,9 @@ struct CapturedState {
     import_attempts: Arc<AtomicUsize>,
     /// How many times the mock `/api/auth/login` endpoint was called.
     login_hits: Arc<AtomicUsize>,
+    /// When true, the import route 401s any request still bearing the seeded token.
+    /// Token-based rather than attempt-counted so concurrent callers are deterministic.
+    reject_seed_token: Arc<AtomicBool>,
 }
 
 /// Returns an injected failure status for this attempt, if one is configured. Consumes a
@@ -164,6 +167,17 @@ async fn import_route(
 ) -> (StatusCode, Json<Value>) {
     if let Some(status) = injected_status(&state, &state.import_attempts) {
         return (status, Json(json!({ "message": "injected failure" })));
+    }
+    if state.reject_seed_token.load(Ordering::SeqCst)
+        && headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            == Some("Bearer seed-token")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "message": "stale token" })),
+        );
     }
     let content_type = headers
         .get("content-type")
@@ -519,5 +533,43 @@ async fn update_page_with_no_changes_sends_only_page_id() -> Result<()> {
     assert_eq!(body["pageId"], json!("page-9"));
     assert!(body.get("title").is_none());
     assert!(body.get("content").is_none());
+    Ok(())
+}
+
+/// Guards the import path's own 401-retry loop: a burst of concurrent callers whose
+/// requests are all rejected must share one re-login, not one login each.
+#[tokio::test]
+async fn concurrent_401s_on_the_import_path_share_a_single_login() -> Result<()> {
+    let temp = TempDir::new()?;
+    let (client, state, _base_url) = spawn(&temp).await?;
+    state.reject_seed_token.store(true, Ordering::SeqCst);
+
+    let client = Arc::new(client);
+    let mut handles = Vec::new();
+    for index in 0..6 {
+        let client = Arc::clone(&client);
+        handles.push(tokio::spawn(async move {
+            client
+                .create_page(
+                    "space-1",
+                    &format!("Concurrent {index}"),
+                    Some(&format!("Body {index}")),
+                    None,
+                )
+                .await
+        }));
+    }
+
+    for handle in handles {
+        let page = handle.await??;
+        assert_eq!(page.id.as_deref(), Some("imported-1"));
+    }
+
+    assert_eq!(
+        state.login_hits.load(Ordering::SeqCst),
+        1,
+        "concurrent 401s on the import path must coalesce onto one login"
+    );
+
     Ok(())
 }

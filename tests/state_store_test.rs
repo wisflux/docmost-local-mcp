@@ -96,3 +96,43 @@ async fn clears_saved_session_without_touching_credentials() {
         })
     );
 }
+
+#[tokio::test]
+async fn concurrent_writes_to_the_same_file_all_succeed() {
+    unsafe {
+        std::env::set_var("DOCMOST_DISABLE_KEYRING", "1");
+    }
+    let temp_dir = TempDir::new().unwrap();
+    let store = StateStore::new(Some(temp_dir.path().to_path_buf())).unwrap();
+
+    let mut handles = Vec::new();
+    for index in 0..16 {
+        let store = store.clone();
+        handles.push(tokio::spawn(async move {
+            store
+                .write_session(&StoredSession {
+                    token: format!("token-{index}"),
+                    expires_at: Some("2026-03-12T01:00:00.000Z".to_string()),
+                    saved_at: "2026-03-12T00:00:00.000Z".to_string(),
+                })
+                .await
+        }));
+    }
+
+    for handle in handles {
+        handle
+            .await
+            .unwrap()
+            .expect("a concurrent write must not fail on a colliding temp file");
+    }
+
+    // One of the writers must win cleanly, and no temp files may be left behind.
+    let session = store.read_session().await.unwrap().expect("session saved");
+    assert!(session.token.starts_with("token-"));
+
+    let mut entries = tokio::fs::read_dir(temp_dir.path()).await.unwrap();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        assert!(!name.ends_with(".tmp"), "leftover temp file: {name}");
+    }
+}

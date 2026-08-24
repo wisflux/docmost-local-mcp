@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
+};
 
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
@@ -15,6 +18,7 @@ use crate::{
 };
 
 const DEFAULT_DIRNAME: &str = ".docmost-local-mcp";
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub struct StateStore {
@@ -134,12 +138,17 @@ impl StateStore {
     {
         self.ensure_base_dir().await?;
 
+        // The temp name must be unique per write: a shared `<name>.tmp` lets
+        // concurrent writers overwrite each other's payload and makes the loser's
+        // rename fail with ENOENT once the winner has moved the file into place.
         let temp_path = file_path.with_extension(format!(
-            "{}.tmp",
+            "{}.{}.{}.tmp",
             file_path
                 .extension()
                 .and_then(|value| value.to_str())
-                .unwrap_or("")
+                .unwrap_or(""),
+            std::process::id(),
+            TEMP_FILE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed)
         ));
         let contents = format!(
             "{}\n",
@@ -147,14 +156,24 @@ impl StateStore {
                 .with_context(|| format!("Failed to serialize {}", file_path.display()))?
         );
 
-        fs::write(&temp_path, contents)
-            .await
-            .with_context(|| format!("Failed to write {}", temp_path.display()))?;
-        set_mode(&temp_path, 0o600).await?;
-        fs::rename(&temp_path, file_path)
-            .await
-            .with_context(|| format!("Failed to move {} into place", temp_path.display()))?;
-        set_mode(file_path, 0o600).await
+        let result = async {
+            fs::write(&temp_path, contents)
+                .await
+                .with_context(|| format!("Failed to write {}", temp_path.display()))?;
+            set_mode(&temp_path, 0o600).await?;
+            fs::rename(&temp_path, file_path)
+                .await
+                .with_context(|| format!("Failed to move {} into place", temp_path.display()))?;
+            set_mode(file_path, 0o600).await
+        }
+        .await;
+
+        if result.is_err() {
+            // Unique temp names are not self-healing, so do not leave one behind.
+            let _ = fs::remove_file(&temp_path).await;
+        }
+
+        result
     }
 
     async fn get_or_create_encryption_key(&self) -> Result<Vec<u8>> {

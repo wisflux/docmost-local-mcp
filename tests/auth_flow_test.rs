@@ -133,6 +133,62 @@ async fn docmost_client_retries_after_401() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn concurrent_cold_start_calls_trigger_a_single_login() -> Result<()> {
+    unsafe {
+        std::env::set_var("DOCMOST_DISABLE_KEYRING", "1");
+    }
+
+    let server = spawn_mock_docmost().await?;
+    let temp_dir = TempDir::new()?;
+    let store = StateStore::new(Some(temp_dir.path().to_path_buf()))?;
+
+    // Saved credentials but no session: every caller must re-authenticate.
+    store
+        .write_config(&StoredConfig {
+            base_url: server.base_url.clone(),
+            email: "jane@example.com".to_string(),
+            last_authenticated_at: "2026-03-12T00:00:00.000Z".to_string(),
+        })
+        .await?;
+    store
+        .write_credentials(&StoredCredentials {
+            email: "jane@example.com".to_string(),
+            password: "super-secret".to_string(),
+        })
+        .await?;
+
+    let auth_manager = AuthManager::new(
+        StartupConfig {
+            base_url: Some(server.base_url.clone()),
+        },
+        Some(temp_dir.path().to_path_buf()),
+    )?;
+
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let auth_manager = auth_manager.clone();
+        handles.push(tokio::spawn(async move {
+            auth_manager.get_authenticated_session().await
+        }));
+    }
+
+    for handle in handles {
+        let session = handle.await??;
+        assert_eq!(session.base_url, server.base_url);
+        assert!(session.token.starts_with("token-"));
+    }
+
+    assert_eq!(
+        server.state.login_count.load(Ordering::SeqCst),
+        1,
+        "concurrent cold-start callers must coalesce onto one login"
+    );
+
+    server.shutdown.abort();
+    Ok(())
+}
+
 #[test]
 fn extracts_auth_token_from_set_cookie_headers() {
     let mut headers = reqwest::header::HeaderMap::new();
