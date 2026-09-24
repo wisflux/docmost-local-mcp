@@ -45,6 +45,7 @@ async fn server_lists_expected_tools() -> Result<()> {
         "get_current_user",
         "create_page",
         "update_page",
+        "edit_page",
         "duplicate_page",
         "copy_page_to_space",
         "move_page",
@@ -63,7 +64,7 @@ async fn server_lists_expected_tools() -> Result<()> {
     // Exactly the expected surface: no accidental extra/duplicate registration.
     assert_eq!(
         tool_names.len(),
-        20,
+        21,
         "unexpected tool count: {tool_names:?}"
     );
     let mut unique = tool_names.clone();

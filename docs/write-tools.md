@@ -1,5 +1,7 @@
 # Write Tools: `create_page` & `update_page`
 
+> `edit_page`, for in-place edits that keep inline comments, is documented in [edit-page.md](edit-page.md).
+
 This document describes the two write tools added to the Docmost MCP server, how
 they get Markdown body content into Docmost, the exact Docmost API they call, and
 the caveats that matter when running against a self-hosted instance.

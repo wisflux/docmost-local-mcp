@@ -24,7 +24,7 @@ fn is_document_node(value: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn convert_nodes(nodes: &[Value], indent: usize) -> String {
+pub(super) fn convert_nodes(nodes: &[Value], indent: usize) -> String {
     let mut output = Vec::new();
 
     for node in nodes {
@@ -136,7 +136,7 @@ fn convert_nodes(nodes: &[Value], indent: usize) -> String {
     output.join("\n").trim_end().to_string()
 }
 
-fn extract_text(content: &[Value]) -> String {
+pub(super) fn extract_text(content: &[Value]) -> String {
     let mut parts = Vec::new();
 
     for item in content {

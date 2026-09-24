@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::prosemirror::EditOutcome;
 use crate::types::{
     DocmostComment, DocmostCurrentUserResponse, DocmostPage, DocmostPageListItem,
     DocmostSearchResult, DocmostUser,
@@ -245,6 +246,54 @@ pub(super) fn format_optional_id(value: Option<&str>) -> String {
     value
         .map(|value| format!("`{value}`"))
         .unwrap_or_else(|| "Unknown".to_string())
+}
+
+/// The `edit_page` report: one diff section per operation, then the revision to pass back.
+pub(crate) fn format_edit_outcome(
+    outcome: &EditOutcome,
+    updated_at: &str,
+    dry_run: bool,
+) -> String {
+    let diff = |prefix: &str, text: &str| {
+        text.lines()
+            .map(|line| format!("{prefix} {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut lines = vec![if dry_run {
+        "# Dry run — nothing written".to_string()
+    } else {
+        "# Page edited".to_string()
+    }];
+    for (index, change) in outcome.changes.iter().enumerate() {
+        let removed = if change.before.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", diff("-", &change.before))
+        };
+        lines.push(format!(
+            "\n## {}. {}\n\n```diff\n{removed}{}\n```",
+            index + 1,
+            change.description,
+            diff("+", &change.after)
+        ));
+    }
+    let (unchanged, total) = outcome.unchanged_blocks;
+    lines.push(format!(
+        "\nTop-level blocks unchanged: {unchanged} of {total}."
+    ));
+    if !outcome.detached_comments.is_empty() {
+        lines.push(format!(
+            "Detached comment threads: {}.",
+            outcome.detached_comments.join(", ")
+        ));
+    }
+    lines.push(if dry_run {
+        format!("updatedAt: `{updated_at}` — pass it as expected_updated_at with dry_run=false to write.")
+    } else {
+        format!("updatedAt: `{updated_at}`")
+    });
+    lines.join("\n")
 }
 
 #[cfg(test)]

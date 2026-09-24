@@ -3,11 +3,14 @@
 //! - [`reader`] — ProseMirror JSON → Markdown (used by read tools such as `get_page`).
 //! - [`writer`] — Markdown → ProseMirror JSON (used by `update_page` and the comment
 //!   tools). `create_page` instead uploads raw Markdown to Docmost's import endpoint.
+//! - [`edit`] — in-place edits on the JSON itself (used by `edit_page`).
 //! - [`nodes`] — ProseMirror node builders shared by the writer.
 
+mod edit;
 mod nodes;
 mod reader;
 mod writer;
 
+pub use edit::{EditChange, EditOutcome, apply_edits, stored_matches_sent};
 pub use reader::prosemirror_to_markdown;
 pub use writer::markdown_to_prosemirror;

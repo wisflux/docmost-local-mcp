@@ -194,3 +194,87 @@ pub struct UpdateCommentInput {
     )]
     pub markdown: String,
 }
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct EditPageInput {
+    #[schemars(description = "The Docmost page ID or slug ID to edit.")]
+    pub page_id: String,
+    #[schemars(
+        description = "Edits applied in order to the page's ProseMirror document. Every match is \
+        against the Markdown that get_page returns and must be exact and unique: an operation \
+        that matches zero or several times fails, and then nothing is written."
+    )]
+    pub operations: Vec<EditOperation>,
+    #[serde(default)]
+    #[schemars(
+        description = "Default true: return the diff and the page's updatedAt, write nothing. \
+        Set false (with expected_updated_at) to write."
+    )]
+    pub dry_run: Option<bool>,
+    #[serde(default)]
+    #[schemars(
+        description = "Required when dry_run is false: the updatedAt value a dry run returned. \
+        The write is refused if the page changed since."
+    )]
+    pub expected_updated_at: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Default false: refuse an edit that removes the last anchor of an inline \
+        comment thread. Set true only when detaching that thread is intended."
+    )]
+    pub allow_detaching_comments: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum EditOperation {
+    /// Replace an exact span of text inside one block (paragraph, heading, code block, table
+    /// cell), or a whole table row given as `| a | b |`.
+    ReplaceText {
+        #[schemars(
+            description = "Exact Markdown to find, as get_page shows it (marks included, e.g. \
+            `**bold**`). Must lie inside one block, or be one whole table row."
+        )]
+        find: String,
+        #[schemars(
+            description = "Inline Markdown that replaces it (one or more table rows, or empty to delete the row, when `find` \
+            is a row). Marks that cover the whole match but are not part of `find` are kept."
+        )]
+        replace: String,
+    },
+    /// Insert new blocks before or after the top-level block that contains `anchor`.
+    InsertBlocks {
+        #[schemars(description = "Exact text found in exactly one top-level block.")]
+        anchor: String,
+        position: InsertPosition,
+        #[schemars(description = "Markdown blocks to insert.")]
+        markdown: String,
+    },
+    /// Append one or more rows after the table row that contains `anchor`.
+    AppendTableRow {
+        #[schemars(
+            description = "Exact text found in exactly one table row, as rendered `| a | b |`."
+        )]
+        anchor: String,
+        #[schemars(
+            description = "One Markdown table row per line, same cell count as the anchor row."
+        )]
+        row: String,
+    },
+    /// Merge adjacent table rows into the first one, on the JSON: the first row's cells are
+    /// kept, and the last cell of every other row is appended to its last cell with one space.
+    MergeTableRows {
+        #[schemars(
+            description = "Two or more exact texts, each found in exactly one table row, for \
+            adjacent rows of one table, in order."
+        )]
+        rows: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InsertPosition {
+    Before,
+    After,
+}
