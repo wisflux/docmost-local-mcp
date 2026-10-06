@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::prosemirror::prosemirror_to_markdown;
 use crate::types::{
     DocmostComment, DocmostCurrentUserResponse, DocmostPage, DocmostPageListItem,
     DocmostSearchResult, DocmostUser,
@@ -105,7 +106,7 @@ pub fn format_comments(page_id: &str, comments: &[DocmostComment]) -> String {
     }
 
     let mut lines = vec![format!("## Comments for Page `{page_id}`"), String::new()];
-    for (index, comment) in comments.iter().take(10).enumerate() {
+    for (index, comment) in comments.iter().enumerate() {
         let author = comment
             .creator
             .as_ref()
@@ -129,14 +130,36 @@ pub fn format_comments(page_id: &str, comments: &[DocmostComment]) -> String {
                 "No"
             }
         ));
+        lines.push(format!(
+            "- Created: {}",
+            comment.created_at.as_deref().unwrap_or("Unknown")
+        ));
+        lines.push(String::new());
+        lines.push(comment_body(comment));
         lines.push(String::new());
     }
-    lines.push(format!(
-        "Showing {} of {} comments.",
-        comments.iter().take(10).count(),
-        comments.len()
-    ));
+    lines.push(format!("Showing {} comments.", comments.len()));
     lines.join("\n")
+}
+
+/// The comment body as Markdown. Docmost stores it as a ProseMirror doc, sometimes JSON-encoded.
+fn comment_body(comment: &DocmostComment) -> String {
+    let body = match &comment.content {
+        Some(serde_json::Value::String(raw)) => serde_json::from_str(raw)
+            .map(|doc| prosemirror_to_markdown(&doc))
+            .unwrap_or_else(|_| raw.clone()),
+        Some(doc) => prosemirror_to_markdown(doc),
+        None => String::new(),
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        "(empty)".to_string()
+    } else {
+        body.lines()
+            .map(|line| format!("> {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 pub fn format_workspace_members(members: &[DocmostUser]) -> String {
@@ -254,6 +277,29 @@ mod tests {
 
     fn page(value: serde_json::Value) -> DocmostPage {
         serde_json::from_value(value).expect("valid DocmostPage")
+    }
+
+    #[test]
+    fn format_comments_shows_every_body() {
+        let doc = json!({"type": "doc", "content": [{"type": "paragraph",
+            "content": [{"type": "text", "text": "Is this A, not B?"}]}]});
+        let comments: Vec<DocmostComment> = (0..12)
+            .map(|i| {
+                serde_json::from_value(json!({"id": format!("c{i}"), "content": doc,
+                    "createdAt": "2026-10-06T08:00:00Z"}))
+                .expect("valid DocmostComment")
+            })
+            .collect();
+        let encoded: DocmostComment =
+            serde_json::from_value(json!({"id": "c12", "content": doc.to_string()}))
+                .expect("valid DocmostComment");
+        let mut all = comments;
+        all.push(encoded);
+        let output = format_comments("p1", &all);
+        assert_eq!(output.matches("> Is this A, not B?").count(), 13);
+        assert!(output.contains("Comment `c12`"));
+        assert!(output.contains("- Created: 2026-10-06T08:00:00Z"));
+        assert!(output.contains("Showing 13 comments."));
     }
 
     #[test]
